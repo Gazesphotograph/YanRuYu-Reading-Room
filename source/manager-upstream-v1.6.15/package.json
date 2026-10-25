@@ -1,0 +1,30 @@
+{
+  "name": "yanruyu-manager-upstream-reference",
+  "version": "1.6.15",
+  "private": true,
+  "description": "Upstream Vue recovery baseline only, not the customized production manager",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@hymbz/comic-read-script": "12.3.5",
+    "@imengyu/vue3-context-menu": "1.3.3",
+    "@vicons/carbon": "0.12.0",
+    "@vicons/fluent": "0.12.0",
+    "@vicons/ionicons4": "0.12.0",
+    "@vicons/material": "0.12.0",
+    "@vitejs/plugin-vue": "5.2.1",
+    "chart.js": "4.4.3",
+    "element-plus": "2.11.5",
+    "he": "1.2.0",
+    "linkifyjs": "4.3.2",
+    "pinia": "2.3.0",
+    "stylus": "0.57.0",
+    "vite": "6.4.1",
+    "vue": "3.5.13",
+    "vue-i18n": "9.14.5",
+    "vuedraggable": "4.1.0",
+    "lodash": "4.17.21"
+  }
+}

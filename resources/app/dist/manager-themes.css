@@ -1,0 +1,447 @@
+/* The complete manager uses the same eight materials as the reading room.
+   Existing component variables are mapped here, preserving every management view. */
+:root.manager-interface[data-room-theme="paper"] {
+  --paper: #f3f1eb;
+  --side: #eae7de;
+  --surface: #fbfaf6;
+  --ink: #2b302a;
+  --muted: #687064;
+  --line: #d4d6ca;
+  --green: #315445;
+  --orange: #a06c46;
+  --soft-accent: #e5e9df;
+  --active-ink: #fffdf8;
+  --control-bg: #315445;
+  --panel-radius: 8px;
+  --shadow-rgb: 45 52 42;
+}
+
+:root.manager-interface {
+  --manager-dock-inset: 20px;
+  --manager-dock-bottom: 12px;
+  --manager-dock-height: 42px;
+  --manager-dock-gap: 10px;
+  --manager-shortcut-width: 146px;
+  --manager-pagination-reserve: calc(var(--manager-dock-inset) + 3 * var(--manager-shortcut-width) + 2 * var(--manager-dock-gap) + 20px);
+  --manager-pagination-bottom: var(--manager-dock-bottom);
+  --cat-paper: var(--paper);
+  --cat-paper-2: var(--surface);
+  --cat-paper-3: color-mix(in srgb, var(--ink) 9%, var(--paper));
+  --cat-ink: var(--ink);
+  --cat-ink-2: var(--muted);
+  --cat-ink-3: color-mix(in srgb, var(--ink) 59%, var(--paper));
+  --cat-rule: var(--line);
+  --cat-rule-2: color-mix(in srgb, var(--ink) 24%, var(--paper));
+  --cat-rule-3: color-mix(in srgb, var(--ink) 48%, var(--paper));
+  --cat-accent: var(--green);
+  --cat-accent-2: color-mix(in srgb, var(--green) 82%, var(--ink));
+  --cat-on-accent: var(--active-ink);
+  --cat-accent-soft: var(--soft-accent);
+  --cat-blue: var(--green);
+  --cat-teal: #397964;
+  --cat-amber: #94601c;
+  --cat-violet: #785397;
+  --cat-star: #95671e;
+  --manager-danger: #bb424b;
+  --cat-shadow: 0 2px 5px rgb(var(--shadow-rgb) / .035), 0 12px 36px -15px rgb(var(--shadow-rgb) / .22);
+  --apple-scrollbar-thumb: color-mix(in srgb, var(--muted) 33%, transparent);
+  --apple-scrollbar-thumb-hover: color-mix(in srgb, var(--muted) 56%, transparent);
+  --el-border-radius-base: var(--panel-radius, 8px);
+  --el-border-radius-small: max(2px, calc(var(--panel-radius, 8px) / 2));
+  --el-color-primary-light-3: color-mix(in srgb, var(--green) 70%, var(--paper));
+  --el-color-primary-light-5: color-mix(in srgb, var(--green) 50%, var(--paper));
+  --el-color-primary-light-7: color-mix(in srgb, var(--green) 30%, var(--paper));
+  --el-color-primary-light-8: color-mix(in srgb, var(--green) 20%, var(--paper));
+  --el-color-primary-light-9: var(--soft-accent);
+  --el-color-success-light-9: color-mix(in srgb, var(--cat-teal) 10%, var(--paper));
+  --el-color-warning-light-9: color-mix(in srgb, var(--cat-amber) 10%, var(--paper));
+  --el-color-danger: var(--manager-danger);
+  --el-color-error: var(--manager-danger);
+  --el-color-danger-light-9: color-mix(in srgb, var(--manager-danger) 10%, var(--paper));
+  --el-color-info-light-9: var(--surface);
+  --el-mask-color: rgb(var(--shadow-rgb) / .3);
+  --mx-menu-text: var(--ink);
+  --mx-menu-hover-text: var(--ink);
+  --mx-menu-shortcut-backgroud: var(--soft-accent);
+  --mx-menu-shortcut-text: var(--muted);
+}
+
+:root.manager-interface[data-theme-dark="true"] {
+  --cat-teal: #97c5b0;
+  --cat-amber: #ddbd85;
+  --cat-violet: #bca4d9;
+  --cat-star: #d7b17a;
+  --manager-danger: #f28c94;
+}
+:root.manager-interface[data-room-theme="acid"] {
+  --cat-on-accent: #f7faf0;
+}
+
+.manager-interface :is(.el-button, .el-input__wrapper, .el-textarea__inner, .el-select__wrapper,
+  .el-dialog, .el-message-box, .el-popper.is-light, .el-popper.is-pure, .mx-context-menu) {
+  border-radius: var(--panel-radius, 8px);
+}
+.manager-interface .el-button--primary:not(.is-plain) {
+  --el-button-text-color: var(--cat-on-accent);
+  --el-button-hover-text-color: var(--cat-on-accent);
+  --el-button-active-text-color: var(--cat-on-accent);
+}
+.manager-interface .el-button--danger {
+  --el-button-bg-color: var(--manager-danger);
+  --el-button-border-color: var(--manager-danger);
+  --el-button-hover-bg-color: color-mix(in srgb, var(--manager-danger) 86%, var(--paper));
+  --el-button-hover-border-color: var(--manager-danger);
+}
+.manager-interface .el-button--danger.is-plain {
+  --el-button-text-color: var(--manager-danger);
+  --el-button-bg-color: transparent;
+  --el-button-border-color: var(--cat-rule-2);
+  --el-button-hover-text-color: var(--manager-danger);
+  --el-button-hover-bg-color: var(--el-color-danger-light-9);
+}
+.manager-interface :is(.book-card, .book-collect-card, .book-tag-edit-card) {
+  border-radius: var(--panel-radius, 8px);
+  box-shadow: 0 2px 8px rgb(var(--shadow-rgb) / .025);
+}
+.manager-interface .book-card-frame { border-radius: var(--panel-radius, 8px); }
+.manager-interface .app-titlebar { background: var(--side); }
+.manager-interface .app-toolbar { background: var(--surface); }
+.manager-interface .titlebar-controls, .manager-interface .titlebar-button { -webkit-app-region: no-drag; }
+/* Keep the native title controls and manager tools outside the scrolling list.
+   The dynamic viewport also covers a short window and display scaling changes. */
+html.manager-interface,
+.manager-interface body { height: 100%; min-height: 0; margin: 0; overflow: hidden; }
+.manager-interface #app { height: 100dvh; min-height: 0; min-width: 0; }
+.manager-interface :is(.app-titlebar, .app-toolbar, .pagination-bar) { flex: none; }
+.manager-interface :is(.app-titlebar, .app-toolbar) { position: relative; z-index: 20; }
+.manager-interface .app-toolbar { box-sizing: border-box; min-width: 0; }
+.manager-interface .app-toolbar .el-button > span { display: inline-flex; align-items: center; justify-content: center; }
+.manager-interface :is(.titlebar-button, .app-toolbar .el-button) svg { display: block; flex: none; }
+.manager-interface .book-card-area { min-width: 0; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.manager-interface :is(.book-collect-view, .book-collection, .book-tag-edit-view, .book-tag-edit-operation) {
+  overscroll-behavior: contain;
+}
+
+/* Every theme shares one bottom alignment and one row of shortcuts. The original
+   helpers are loaded later and position their buttons independently; these
+   scoped rules intentionally replace just those legacy fixed coordinates. */
+.manager-interface .pagination-bar {
+  box-sizing: border-box;
+  align-items: center;
+  min-height: calc(var(--manager-dock-height) + var(--manager-dock-bottom) + 11px);
+  padding: 10px var(--manager-pagination-reserve) var(--manager-pagination-bottom) var(--manager-dock-inset);
+}
+.manager-interface .pagination-bar .el-pagination {
+  box-sizing: border-box;
+  min-height: var(--manager-dock-height);
+  align-items: center;
+  justify-content: center;
+}
+.manager-interface .manager-room-return {
+  position: fixed;
+  right: var(--manager-dock-inset);
+  bottom: var(--manager-dock-bottom);
+  z-index: 1500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: var(--manager-shortcut-width);
+  height: var(--manager-dock-height);
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius, 8px);
+  padding: 6px 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 12px/1.35 var(--cat-font);
+  text-align: center;
+  cursor: pointer;
+  box-shadow: var(--cat-shadow);
+  -webkit-app-region: no-drag;
+}
+.manager-interface .manager-room-return:hover { border-color: var(--green); color: var(--green); }
+.manager-interface .manager-data-protection {
+  right: calc(var(--manager-dock-inset) + var(--manager-shortcut-width) + var(--manager-dock-gap));
+  bottom: var(--manager-dock-bottom) !important;
+}
+.manager-interface .manager-task-center {
+  right: calc(var(--manager-dock-inset) + 2 * (var(--manager-shortcut-width) + var(--manager-dock-gap))) !important;
+  bottom: var(--manager-dock-bottom) !important;
+  z-index: 1500 !important;
+}
+.manager-interface .manager-task-center [data-task-center-count] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  min-height: 20px;
+  margin-left: 0;
+  padding: 1px 5px;
+  line-height: 1;
+}
+.manager-interface .manager-task-center [data-task-center-count][hidden] { display: none; }
+
+/* Editing tools retain a visible column in every material, including when the
+   original Element columns are rendered without their el-row wrapper. */
+.manager-interface .book-card-area:has(> .book-tag-edit-view, > .book-collect-view) {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  overflow: hidden;
+  padding-top: 8px;
+}
+.manager-interface .book-card-area > :is(.book-tag-edit-view, .book-collect-view) {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  height: auto;
+  max-height: 100%;
+  overflow: auto;
+}
+.manager-interface .book-card-area > :is(.book-tag-edit-operation, .book-collection) {
+  flex: 0 0 clamp(220px, 20vw, 280px);
+  width: auto;
+  max-width: none;
+  min-height: 0;
+  height: auto;
+  max-height: 100%;
+  padding: 16px 14px;
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius, 8px);
+  background: var(--surface);
+}
+.manager-theme-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.manager-appearance { text-align: left; padding: 3px 3px 12px; }
+.manager-appearance-title { margin: 0 0 8px; font-size: 21px; font-weight: 600; color: var(--ink); }
+.manager-theme-note { margin: 0 0 22px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.manager-appearance .theme-card { font: inherit; color: var(--ink); cursor: pointer; }
+.manager-appearance .theme-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.manager-appearance .theme-card-desc { min-height: 43px; }
+.manager-interface .setting-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100dvh - 84px);
+  margin-bottom: 24px;
+}
+.manager-interface .setting-dialog > .el-dialog__header { flex: none; }
+.manager-interface .setting-dialog > .el-dialog__body,
+.manager-interface .setting-dialog .setting-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.manager-interface .setting-dialog > .el-dialog__body { overflow: hidden; }
+.manager-interface .setting-tabs > .el-tabs__header { flex: none; }
+/* Each tab owns its scroll position. A long Advanced page must not scroll the
+   opening rows of Shortcuts out of view when switching between the two. */
+.manager-interface .setting-tabs > .el-tabs__content {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.manager-interface .setting-tabs > .el-tabs__content > .el-tab-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 4px 10px 12px 2px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.manager-interface .setting-tabs > .el-tabs__content > .el-tab-pane::-webkit-scrollbar-thumb {
+  border-color: transparent;
+  border-radius: 8px;
+  background-clip: padding-box;
+}
+
+/* Joined field actions use the enclosing end-cap, not independent button
+   corners or Element's negative slot margins. Keep every native hit target. */
+.manager-interface .setting-dialog .setting-line .el-input-group--prepend .el-input__wrapper {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group--append .el-input__wrapper {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__prepend {
+  border-radius: var(--manager-field-radius, var(--panel-radius, 8px)) 0 0 var(--manager-field-radius, var(--panel-radius, 8px));
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append {
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 0 var(--manager-field-radius, var(--panel-radius, 8px)) var(--manager-field-radius, var(--panel-radius, 8px)) 0;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append .el-button-group {
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append .el-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append .el-button + .el-button {
+  margin-left: 0;
+  border-left: 1px solid var(--cat-rule-2);
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append .el-button:hover:not(.is-disabled) {
+  background: var(--soft-accent);
+  box-shadow: none;
+}
+.manager-interface .setting-dialog .setting-line .el-input-group__append .el-button:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -3px;
+}
+
+/* Let shortcut pairs reflow as whole items, with long combinations wrapping
+   inside their own keycaps instead of widening the legacy fixed-width table. */
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions {
+  margin-top: 0 !important;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius, 8px);
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+}
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions + .el-descriptions { margin-top: 14px !important; }
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__header { margin-bottom: 8px; }
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__title {
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: .04em;
+}
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__body { background: transparent; }
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__table { display: block; }
+.manager-interface .setting-dialog #pane-accelerator tbody {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+  gap: 0 22px;
+}
+.manager-interface .setting-dialog #pane-accelerator tr { display: contents; }
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__cell {
+  display: grid;
+  grid-template-columns: minmax(100px, .7fr) minmax(0, 1.5fr);
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: auto !important;
+  min-width: 0;
+  min-height: 36px;
+  padding: 4px 0;
+}
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__label,
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__content {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.manager-interface .setting-dialog #pane-accelerator .el-descriptions__label > span { min-width: 0 !important; }
+.manager-interface .setting-dialog #pane-accelerator .el-tag {
+  display: inline-flex;
+  box-sizing: border-box;
+  max-width: 100%;
+  height: auto;
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: max(5px, calc(var(--panel-radius, 8px) / 2));
+  border-color: var(--cat-rule-2);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  color: var(--ink);
+  vertical-align: middle;
+}
+.manager-interface .setting-dialog #pane-accelerator .el-tag__content {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+/* Short feedback uses compositor-friendly transforms, without persistent animation. */
+.manager-interface :is(.el-button, .titlebar-button, .theme-card, .manager-room-return) {
+  transition: transform .16s cubic-bezier(.22,.8,.32,1), background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+.manager-interface :is(.el-button, .titlebar-button, .theme-card, .manager-room-return):active:not(:disabled) {
+  transform: scale(.97);
+}
+.manager-interface :is(.theme-card, .manager-room-return):focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+
+.manager-interface[data-room-theme="terminal"] :is(.titlebar-brand, .theme-card-sub, .el-tabs__item) {
+  font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+}
+.manager-interface[data-room-theme="hub"] .titlebar-brand b {
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--active-ink);
+  background: var(--green);
+}
+.manager-interface[data-room-theme="acid"] .theme-card[aria-pressed="true"] { box-shadow: 3px 3px 0 var(--green); }
+
+@media (max-width: 1100px) {
+  :root.manager-interface { --manager-dock-inset: 14px; --manager-shortcut-width: 126px; --manager-dock-gap: 8px; }
+}
+@media (max-width: 950px) {
+  .manager-interface .app-toolbar { flex-wrap: wrap; }
+  .manager-interface .app-toolbar .search-input { flex-basis: calc(100% - 100px); }
+  .manager-interface .app-toolbar .toolbar-group { flex: 1 1 auto; }
+  .manager-interface .app-toolbar .toolbar-group:last-child { justify-content: flex-end; }
+}
+@media (max-width: 800px) {
+  :root.manager-interface { --manager-dock-inset: 12px; }
+  .manager-appearance .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .manager-interface .pagination-bar .el-pagination { gap: 8px; }
+  .manager-interface .pagination-bar .el-pagination--small .el-select { width: 90px; }
+  .manager-interface .manager-room-return { font-size: 11px; }
+}
+@media (max-width: 900px) {
+  :root.manager-interface {
+    --manager-pagination-reserve: var(--manager-dock-inset);
+    --manager-pagination-bottom: calc(var(--manager-dock-bottom) + var(--manager-dock-height) + var(--manager-dock-gap));
+  }
+}
+@media (max-height: 720px) {
+  :root.manager-interface[data-room-theme] .library-hero:not(.hero-collapsed) { max-height: 116px; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-inner { padding: 12px 26px 8px; align-items: center; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-count { gap: 12px; padding-bottom: 0; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-count .hero-num { font-size: 42px; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-count .hero-caption { font-size: 8px; line-height: 1.35; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-count .hero-caption em { font-size: 12px; }
+  :root.manager-interface[data-room-theme] .library-hero .hero-word { font-size: clamp(40px, 6vw, 68px); line-height: 1; margin: 0; }
+  :root.manager-interface[data-room-theme] .cat-ticker { padding-block: 8px; }
+}
+@media (max-height: 520px) {
+  :root.manager-interface[data-room-theme] .library-hero .hero-inner { display: none; }
+  :root.manager-interface[data-room-theme] .library-hero:not(.hero-collapsed) { max-height: 66px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .manager-interface :is(.el-button, .titlebar-button, .theme-card, .manager-room-return) {
+    transition: none;
+  }
+  .manager-interface :is(.el-button, .titlebar-button, .theme-card, .manager-room-return):active {
+    transform: none;
+  }
+}

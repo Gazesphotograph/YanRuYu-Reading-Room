@@ -1,0 +1,36 @@
+{
+  "name": "exhentai-manga-manager",
+  "productName": "颜如玉",
+  "private": true,
+  "version": "1.6.16",
+  "author": "SchneeHertz",
+  "description": "颜如玉 · 书中自有颜如玉 · 私人漫画阅览室",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SchneeHertz/exhentai-manga-manager.git"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "electron-window-state": "^5.0.3",
+    "express": "^4.22.2",
+    "glob": "^10.5.0",
+    "https-proxy-agent": "^7.0.6",
+    "lodash": "^4.18.1",
+    "nanoid": "^3.3.19",
+    "node-fetch": "^2.7.0",
+    "sequelize": "^6.37.8",
+    "sharp": "^0.35.4",
+    "sqlite": "^4.2.1",
+    "sqlite3": "^6.0.1"
+  },
+  "overrides": {
+    "qs": "^6.16.0",
+    "uuid": "^11.1.1"
+  },
+  "allowScripts": {
+    "sqlite3@6.0.1": true
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

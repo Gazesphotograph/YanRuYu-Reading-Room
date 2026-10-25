@@ -1,0 +1,74 @@
+.task-center-dialog {
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 40px));
+  max-height: calc(100dvh - 48px);
+  padding: 28px;
+  border: 1px solid var(--dialog-border, var(--line, #d8dbd0));
+  border-radius: var(--dialog-radius, 20px);
+  background: var(--dialog-bg, var(--surface, #fcfbf7));
+  color: var(--ink, #293b32);
+  box-shadow: var(--dialog-shadow, 0 24px 90px rgb(0 0 0 / .28));
+  backdrop-filter: var(--dialog-filter, none);
+  overflow: hidden;
+  font: 14px/1.6 var(--font-ui, "Segoe UI", "Microsoft YaHei UI", sans-serif);
+  color-scheme: inherit;
+}
+.task-center-dialog[open] { display: flex; flex-direction: column; }
+.task-center-dialog::backdrop { background: var(--dialog-overlay, rgb(18 27 22 / .42)); backdrop-filter: var(--dialog-overlay-filter, blur(8px)); }
+.task-center-dialog *, .task-center-dialog *::before, .task-center-dialog *::after { box-sizing: border-box; }
+.task-center-dialog [hidden] { display: none !important; }
+.task-center-dialog header { display: flex; flex: none; gap: 20px; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+.task-center-dialog header > div { min-width: 0; }
+.task-center-dialog header > button { flex: none; }
+.task-center-dialog h2 { font-size: 24px; font-weight: 500; line-height: 1.4; margin: 0 0 7px; }
+.task-center-dialog p { margin: 5px 0; }
+.task-center-dialog header p { color: var(--muted, #60685c); max-width: 540px; font-size: 13px; }
+.task-center-dialog button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 38px; padding: 8px 14px;
+  border: 1px solid var(--line, #d8dbd0);
+  border-radius: var(--dialog-button-radius, max(8px, var(--panel-radius, 6px)));
+  background: var(--dialog-control-bg, var(--paper, #f3f1eb));
+  color: inherit; font: inherit; font-size: 13px; line-height: 1.4;
+  cursor: pointer; white-space: nowrap; -webkit-app-region: no-drag;
+}
+.task-center-dialog button:hover:not(:disabled) { background: var(--soft-accent, #e0e6da); border-color: color-mix(in srgb, var(--green, #315445) 40%, var(--line, #d8dbd0)); }
+.task-center-dialog button:disabled { opacity: .45; cursor: default; }
+.task-center-dialog button:focus-visible, .task-center-dialog summary:focus-visible { outline: 2px solid var(--green, #315445); outline-offset: 3px; }
+.task-center-start { display: flex; flex: none; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.task-center-start button:first-child { background: var(--control-bg, var(--green, #315445)); color: var(--active-ink, #fffef8); border-color: var(--control-bg, var(--green, #315445)); }
+.task-center-start button:first-child:hover:not(:disabled) { background: var(--control-bg, var(--green, #315445)); border-color: var(--control-bg, var(--green, #315445)); filter: brightness(1.06); }
+.task-center-dialog .task-center-status { flex: none; min-height: 0; margin: 0; color: var(--green, #315445); overflow-wrap: anywhere; }
+.task-center-dialog .task-center-status:not(:empty) { max-height: min(96px, 18dvh); margin-bottom: 14px; overflow: auto; }
+.task-center-list { display: grid; align-content: start; gap: 12px; min-height: 0; padding: 4px; margin: -4px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.task-center-item { min-width: 0; padding: 18px; border: 1px solid var(--line, #d8dbd0); border-radius: var(--dialog-card-radius, 12px); background: var(--dialog-card-bg, color-mix(in srgb, var(--paper, #f3f1eb) 58%, transparent)); }
+.task-center-item-head { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.task-center-item-head strong { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.task-center-item-head span { flex: none; white-space: nowrap; color: var(--muted, #60685c); font-size: 12px; }
+.task-center-item[data-task-status="failed"], .task-center-item[data-task-status="completed-with-errors"] { border-color: color-mix(in srgb, var(--orange, #95603f) 64%, var(--line, #d8dbd0)); }
+.task-center-item progress { display: block; width: 100%; height: 7px; margin: 12px 0 4px; accent-color: var(--green, #315445); }
+.task-center-progress, .task-center-summary { font-size: 12px; color: var(--muted, #60685c); }
+.task-center-path { font-size: 12px; color: var(--muted, #60685c); overflow-wrap: anywhere; word-break: break-word; }
+.task-center-item details { margin-top: 10px; }
+.task-center-item summary { cursor: pointer; color: var(--orange, #95603f); }
+.task-center-item ul { list-style: none; padding: 0; max-height: 250px; overflow: auto; overscroll-behavior: contain; }
+.task-center-item li { display: grid; gap: 3px; margin: 0 0 12px; padding-left: 10px; border-left: 2px solid var(--orange, #95603f); overflow-wrap: anywhere; }
+.task-center-item-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.task-center-item-actions button { min-height: 32px; padding: 6px 11px; font-size: 12px; }
+.task-center-item time { margin-left: auto; font-size: 11px; color: var(--muted, #60685c); font-variant-numeric: tabular-nums; }
+.task-center-empty { padding: 22px; text-align: center; color: var(--muted, #60685c); }
+.task-center-dialog .task-center-warning { color: var(--orange, #95603f); }
+.manager-task-center { position: fixed !important; right: 16px !important; bottom: 108px !important; z-index: 1400 !important; }
+.manager-task-center [data-task-center-count] { background: var(--control-bg, var(--green, #315445)); border-radius: 12px; color: var(--active-ink, #fffef8); padding: 1px 6px; margin-left: 4px; }
+@media (max-width: 600px), (max-height: 600px) {
+  .task-center-dialog { padding: 20px; width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
+  .task-center-dialog header { gap: 12px; margin-bottom: 15px; }
+  .task-center-dialog h2 { font-size: 21px; }
+  .task-center-start { margin-bottom: 14px; }
+  .task-center-item { padding: 14px; }
+}
+@media (max-width: 460px) {
+  .task-center-start button { flex: 1; }
+  .task-center-item-head { flex-wrap: wrap; gap: 5px; }
+  .task-center-item time { width: 100%; margin-left: 0; }
+}

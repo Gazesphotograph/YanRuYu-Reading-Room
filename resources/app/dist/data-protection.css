@@ -1,0 +1,56 @@
+.data-protection-dialog {
+  box-sizing: border-box; width: min(680px, calc(100vw - 40px)); max-height: calc(100dvh - 48px); padding: 28px;
+  border: 1px solid var(--dialog-border, var(--line, #d8dbd0)); border-radius: var(--dialog-radius, 20px);
+  background: var(--dialog-bg, var(--surface, #fcfbf7)); color: var(--ink, #293b32);
+  box-shadow: var(--dialog-shadow, 0 24px 90px rgb(0 0 0 / .28)); backdrop-filter: var(--dialog-filter, none);
+  overflow: hidden; font: 14px/1.6 var(--font-ui, "Segoe UI", "Microsoft YaHei UI", sans-serif); color-scheme: inherit;
+}
+.data-protection-dialog[open] { display: flex; flex-direction: column; }
+.data-protection-dialog::backdrop { background: var(--dialog-overlay, rgb(18 27 22 / .42)); backdrop-filter: var(--dialog-overlay-filter, blur(8px)); }
+.data-protection-dialog *, .data-protection-dialog *::before, .data-protection-dialog *::after { box-sizing: border-box; }
+.data-protection-dialog [hidden] { display: none !important; }
+.data-protection-dialog h2 { font-size: 24px; font-weight: 500; line-height: 1.4; margin: 0 0 7px; }
+.data-protection-dialog h3 { font-size: 16px; font-weight: 600; margin: 0 0 9px; }
+.data-protection-dialog p { margin: 8px 0; }
+.data-protection-dialog header { display: flex; flex: none; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+.data-protection-dialog header > div { min-width: 0; }
+.data-protection-dialog header > button { flex: none; }
+.data-protection-dialog header .protection-note { margin-bottom: 0; font-size: 13px; }
+.protection-content { min-height: 0; padding: 4px; margin: -4px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.protection-content > section { padding: 18px; margin-bottom: 14px; border: 1px solid var(--line, #d8dbd0); border-radius: var(--dialog-card-radius, 12px); background: var(--dialog-card-bg, color-mix(in srgb, var(--paper, #f3f1eb) 58%, transparent)); }
+.protection-content > section:last-child { margin-bottom: 0; }
+.data-protection-dialog button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 38px; padding: 8px 14px;
+  border: 1px solid var(--line, #d8dbd0); border-radius: var(--dialog-button-radius, max(8px, var(--panel-radius, 6px)));
+  background: var(--dialog-control-bg, var(--paper, #f3f1eb)); color: inherit; font: inherit; font-size: 13px; line-height: 1.4;
+  cursor: pointer; -webkit-app-region: no-drag;
+}
+.data-protection-dialog button:hover:not(:disabled) { background: var(--soft-accent, #e0e6da); border-color: color-mix(in srgb, var(--green, #315445) 40%, var(--line, #d8dbd0)); }
+.data-protection-dialog button:disabled { opacity: .45; cursor: default; }
+.data-protection-dialog button:focus-visible, .data-protection-dialog input:focus-visible { outline: 2px solid var(--green, #315445); outline-offset: 3px; }
+.data-protection-dialog .protection-primary { background: var(--control-bg, var(--green, #315445)); color: var(--active-ink, #fffef8); border-color: var(--control-bg, var(--green, #315445)); }
+.data-protection-dialog .protection-primary:hover:not(:disabled) { background: var(--control-bg, var(--green, #315445)); border-color: var(--control-bg, var(--green, #315445)); filter: brightness(1.06); }
+.data-protection-dialog .protection-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; }
+.data-protection-dialog .protection-note { color: var(--muted, #60685c); font-size: 12px; }
+.data-protection-dialog label { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; }
+.data-protection-dialog input[type=checkbox] { accent-color: var(--control-bg, var(--green, #315445)); width: 17px; height: 17px; margin: 0; flex: none; }
+.data-protection-dialog dl { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 20px; margin: 12px 0; }
+.data-protection-dialog dt { color: var(--muted, #60685c); }
+.data-protection-dialog dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.data-protection-dialog .protection-preview { margin-top: 14px; padding: 16px; border: 1px solid var(--line, #d8dbd0); border-radius: var(--dialog-card-radius, 12px); background: var(--dialog-card-bg, transparent); }
+.data-protection-dialog .protection-path { overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; color: var(--muted, #60685c); }
+.data-protection-dialog .protection-status { flex: none; min-height: 0; max-height: min(120px, 20dvh); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; color: var(--green, #315445); }
+.data-protection-dialog .protection-status:not(:empty) { margin-top: 16px; }
+.data-protection-dialog [data-level="error"] { color: var(--orange, #95603f); font-weight: 550; border-left: 3px solid var(--orange, #95603f); padding-left: 12px; }
+.data-protection-dialog .protection-point { padding: 14px 0; border-bottom: 1px solid var(--line, #d8dbd0); }
+.data-protection-dialog .protection-point:last-child { border-bottom: 0; padding-bottom: 0; }
+.data-protection-dialog .protection-point strong { display: block; overflow-wrap: anywhere; }
+.data-protection-dialog .protection-point button { margin: 10px 8px 0 0; }
+.manager-data-protection { bottom: 72px !important; }
+@media (max-width: 900px) { .manager-data-protection { bottom: 103px !important; } }
+@media (max-width: 650px), (max-height: 600px) {
+  .data-protection-dialog { padding: 20px; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
+  .data-protection-dialog header { gap: 12px; margin-bottom: 15px; }
+  .data-protection-dialog h2 { font-size: 21px; }
+  .protection-content > section { padding: 14px; }
+}

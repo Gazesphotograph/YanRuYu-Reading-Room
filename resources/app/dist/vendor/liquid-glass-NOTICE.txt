@@ -1,0 +1,44 @@
+Liquid glass visual reference
+============================
+
+The reading room's standalone CSS/SVG glass layer is inspired by the backdrop
+refraction, separate content layer, RGB dispersion and specular rim techniques in:
+https://github.com/rdev/liquid-glass-react
+Reference revision: ac48eab18d1f7f444ae30002d240cae29c863a21 (v1.1.1).
+
+The runtime uses its own rounded-rectangle displacement map and DOM lifecycle;
+React, the upstream package and upstream image assets are not runtime dependencies.
+The reference project's MIT license is retained below.
+
+Additional visual and technical references for the complete manager material:
+https://kube.io/blog/liquid-glass-css-svg/
+https://aave.com/design/building-glass-for-the-web
+https://codepen.io/mr-tipton/pen/YPqGgxa
+https://github.com/VII-Cae/hyalite--liquid-glass
+https://glass.outpacestudios.com/
+https://liquid-glass.maxrovensky.com/
+https://github.com/Kyant0/AndroidLiquidGlass
+
+The manager's local CSS, SVG backdrop and optical runtime are original assets.
+Its convex-rim sampling, subtle RGB dispersion and pointer-driven highlights
+apply to backdrop layers only; text and artwork remain separate. None of the
+additional reference projects is bundled or required at runtime.
+
+Copyright 2025 MAX ROVENSKY
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,0 +1,328 @@
+'use strict'
+
+// A fresh browser profile talks to the real organizer service through a test
+// bridge. The SQLite databases, source pages and journal are synthetic and all
+// fixtures are removed, even after a failed check. No real app profile is used.
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs/promises')
+const path = require('node:path')
+const os = require('node:os')
+const http = require('node:http')
+const { chromium } = require('./playwright-runtime.cjs')
+const { prepareMangaModel, prepareMetadataModel } = require('../resources/app/modules/database')
+const { createReadingStateStore, writeAtomic } = require('../resources/app/modules/reading_state')
+const { createLibraryOrganizer } = require('../resources/app/modules/library_organizer')
+const { fingerprintBook } = require('../resources/app/modules/library_identity')
+const { serialQueue } = require('../resources/app/modules/safety')
+
+test('organizer UI previews, applies and undoes edits, merges and selective missing-record removal; keyboard and narrow layout work', async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'yanruyu-organizer-ui-'))
+  const library = path.join(directory, 'library'); await fs.mkdir(library)
+  const Manga = prepareMangaModel(path.join(directory, 'database.sqlite'))
+  const Metadata = prepareMetadataModel(path.join(directory, 'metadata.sqlite'))
+  let browser, server
+  t.after(async () => {
+    if (browser) await browser.close()
+    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    await Promise.allSettled([Manga.sequelize.close(), Metadata.sequelize.close()])
+    const resolved = path.resolve(directory)
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('yanruyu-organizer-ui-')) throw new Error('Unsafe UI fixture cleanup')
+    await fs.rm(resolved, { recursive: true, force: true })
+  })
+  await Manga.sync(); await Metadata.sync()
+  const books = []
+  for (let i = 0; i < 3; i++) {
+    const id = 'neutral-' + i, filepath = path.join(library, i === 0 ? id + ' & copy' : id)
+    await fs.mkdir(filepath)
+    await fs.writeFile(path.join(filepath, '1.jpg'), 'neutral cover')
+    await fs.writeFile(path.join(filepath, '2.jpg'), i === 2 ? 'third book content' : 'neutral second page')
+    const book = { id, filepath, type: 'folder', hash: 'hash-' + i, title: i === 0 ? 'Neutral <img src=x onerror="window.injected=1">' : 'Neutral volume ' + i,
+      title_jpn: i === 0 ? 'Shelf title <svg onload="window.injected=2">' : null,
+      status: 'tagged', pageCount: 2, tags: { artist: ['Author ' + i], other: ['Original'] }, identityFingerprint: await fingerprintBook(filepath, 'folder') }
+    await Manga.create(book); await Metadata.create(book); books.push(book)
+  }
+  const readingState = createReadingStateStore({ storePath: directory })
+  await readingState.saveProgress(books[1].id, { page: 2, total: 2, time: 200 })
+  let collections = [{ id: 'original-series', title: '原有合集', list: [books[1].hash] }]
+  const organizer = createLibraryOrganizer({ storePath: directory, getManga: () => Manga, getMetadata: () => Metadata, readingState,
+    getCollections: () => collections, saveCollections: async value => { await writeAtomic(path.join(directory, 'collectionList.json'), value); collections = value },
+    libraryRoot: () => library, commit: serialQueue() })
+  await organizer.ready
+  const calls = [], errors = [], removalRequests = []
+  let removalPreviewGate
+  const routes = { 'organizer-catalog': 'catalog', 'organizer-preview-batch': 'previewBatch', 'organizer-preview-merge': 'previewMerge', 'organizer-apply': 'apply',
+    'organizer-history': 'history', 'organizer-undo': 'undo', 'organizer-health': 'health', 'organizer-duplicates': 'duplicates',
+    'organizer-preview-remove-missing': 'previewRemoveMissing' }
+  server = http.createServer(async (request, response) => {
+    try {
+      const filename = request.url === '/library-organizer.js' ? 'library-organizer.js' : request.url === '/library-organizer.css' ? 'library-organizer.css' : null
+      if (filename) {
+        response.writeHead(200, { 'Content-Type': filename.endsWith('.js') ? 'text/javascript' : 'text/css' })
+        response.end(await fs.readFile(path.join(__dirname, '../resources/app/dist', filename))); return
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html' })
+      response.end('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>:root{--surface:#f8f5ed;--paper:#fffcf6;--ink:#293b32;--green:#547963;--line:#d5dccc}body{margin:0;background:#e9ede6}#toolbar{padding:18px}</style></head><body><div id="toolbar"></div><script type="module">import {mountLibraryOrganizer} from "/library-organizer.js";mountLibraryOrganizer(document.querySelector("#toolbar"));</script></body></html>')
+    } catch { response.writeHead(500); response.end('fixture server error') }
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  browser = await chromium.launch({ ...(process.env.GALLERY_BROWSER_PATH ? { executablePath: process.env.GALLERY_BROWSER_PATH } : { channel: 'msedge' }), headless: true })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  await context.exposeBinding('organizerTestInvoke', async (_source, channel, ...args) => {
+    calls.push(channel)
+    if (channel === 'organizer-preview-remove-missing') {
+      removalRequests.push(args[0])
+      if (removalPreviewGate) { const gate = removalPreviewGate; removalPreviewGate = null; await gate }
+    }
+    if (routes[channel]) return organizer[routes[channel]](...args)
+    if (channel === 'load-reading-state') return readingState.load()
+    if (channel === 'relocate-book') return { canceled: true }
+    throw new Error('Unexpected fixture IPC: ' + channel)
+  })
+  await context.addInitScript(() => {
+    window.ipcRenderer = { invoke: (channel, ...args) => window.organizerTestInvoke(channel, ...args) }
+    window.readingState = { progress: {}, pending: new Map(), flush: async () => {}, mirror: () => {} }
+  })
+  const page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => errors.push(error.message))
+  await page.goto('http://127.0.0.1:' + server.address().port)
+  await page.locator('[data-open-library-organizer]').click()
+  await page.locator('[data-book-id="neutral-0"]').waitFor()
+  assert.equal(await page.locator('.organizer-book-list img,.organizer-book-list script,.organizer-book-list svg').count(), 0)
+  assert.equal(await page.evaluate(() => window.injected), undefined)
+  await page.locator('[data-book-id="neutral-0"]').check(); await page.locator('[data-book-id="neutral-1"]').check()
+  await page.locator('[data-merge-card] > summary').click()
+  assert.equal(await page.locator('[data-keeper]').inputValue(), books[0].id)
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[1].id,
+    'An unread keeper defaults to the only selected book with saved progress')
+  await page.locator('[data-progress-source]').selectOption(books[0].id)
+  await page.locator('[data-keeper]').selectOption(books[1].id)
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[0].id,
+    'Changing the keeper leaves the chosen progress source independent')
+  await page.locator('[data-book-id="neutral-2"]').check(); await page.locator('[data-book-id="neutral-2"]').uncheck()
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[0].id,
+    'Redrawing merge options preserves an explicit unread progress choice')
+  await page.locator('[data-organizer="clear-selection"]').click()
+  await page.locator('[data-book-id="neutral-0"]').check(); await page.locator('[data-book-id="neutral-1"]').check()
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[1].id)
+  await page.locator('[data-edit-mode]').selectOption('replace')
+  await page.locator('[data-edit-values]').fill('Correct Author')
+  await page.locator('[data-organizer="preview-tags"]').click()
+  await page.locator('[data-preview]:not([hidden])').waitFor()
+  assert.deepEqual((await Manga.findByPk(books[0].id)).tags.artist, ['Author 0'])
+  assert.match(await page.locator('[data-preview]').innerText(), /Correct Author/)
+  await page.locator('[data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('整理已保存'))
+  assert.deepEqual((await Manga.findByPk(books[0].id)).tags.artist, ['Correct Author'])
+  await page.locator('[data-tab="history"]').click(); await page.locator('[data-undo]').waitFor()
+  await page.locator('[data-undo]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  assert.deepEqual((await Manga.findByPk(books[0].id)).tags.artist, ['Author 0'])
+  await page.locator('[data-tab="batch"]').click(); await page.locator('[data-organizer="clear-selection"]').click()
+  await page.locator('[data-book-id="neutral-0"]').check()
+  await page.locator('.organizer-editing > details').filter({ has: page.locator('.organizer-meta-fields') }).locator('summary').click()
+  await page.locator('[data-field-enabled="title_jpn"]').check(); await page.locator('[data-field="title_jpn"]').fill('Edited volume title')
+  await page.locator('[data-field-enabled="rating"]').check(); await page.locator('[data-field="rating"]').fill('4.5')
+  await page.locator('[data-organizer="preview-fields"]').click(); await page.locator('[data-preview]:not([hidden])').waitFor()
+  assert.equal((await Manga.findByPk(books[0].id)).title_jpn, books[0].title_jpn, 'Metadata preview does not save the edited title')
+  await page.locator('[data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('整理已保存'))
+  assert.equal((await Manga.findByPk(books[0].id)).title_jpn, 'Edited volume title')
+  assert.equal((await Metadata.findByPk(books[0].hash)).rating, 4.5)
+  await page.locator('[data-tab="history"]').click(); await page.locator('[data-undo]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  assert.equal((await Manga.findByPk(books[0].id)).title_jpn, books[0].title_jpn)
+  assert.equal((await Metadata.findByPk(books[0].hash)).rating, null)
+  await page.locator('[data-tab="duplicates"]').click(); await page.locator('[data-organizer="duplicates"]').click()
+  await page.locator('[data-duplicate-group="0"]').waitFor()
+  const duplicateResults = page.locator('[data-duplicate-results]')
+  assert.deepEqual(await duplicateResults.locator('[data-source-path]').allTextContents(), books.slice(0, 2).map(book => book.filepath),
+    'Duplicate clues display each recorded source path without rebasing it')
+  assert.deepEqual(await duplicateResults.locator('[data-source-name]').allTextContents(), books.slice(0, 2).map(book => '文件夹名：' + path.basename(book.filepath)))
+  assert.deepEqual(await duplicateResults.locator('[data-original-title]').allTextContents(), ['书名：' + books[0].title],
+    'Only a display title that differs from the original book title needs another title line')
+  assert.ok((await duplicateResults.innerText()).includes('显示书名：' + books[0].title_jpn))
+  assert.equal(await duplicateResults.locator('img,script,svg').count(), 0, 'Source names and both title fields are escaped')
+  await page.locator('[data-duplicate-group="0"]').click()
+  assert.equal(await page.locator('[data-merge-card]').getAttribute('open'), '')
+  await page.locator('[data-keeper]').selectOption(books[0].id)
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[1].id)
+  await page.locator('[data-organizer="preview-merge"]').click()
+  await page.waitForFunction(() => document.querySelector('[data-preview]')?.textContent.includes('合并预览'))
+  const mergeText = await page.locator('[data-preview]').innerText()
+  assert.match(mergeText, /完整 SHA-256/); assert.match(mergeText, /隐藏为来源副本/); assert.match(mergeText, /第 2 \/ 2 页/); assert.match(mergeText, /原有合集/)
+  const sources = page.locator('[data-preview] .organizer-source')
+  assert.deepEqual(await sources.locator('[data-source-path]').allTextContents(), books.slice(0, 2).map(book => book.filepath))
+  assert.deepEqual(await sources.locator('[data-source-name]').allTextContents(), books.slice(0, 2).map(book => '文件夹名：' + path.basename(book.filepath)))
+  assert.deepEqual(await sources.locator('[data-original-title]').allTextContents(), ['书名：' + books[0].title])
+  assert.equal(await sources.locator('img,script,svg').count(), 0)
+  assert.equal(await page.evaluate(() => window.injected), undefined)
+  assert.equal((await Manga.findByPk(books[1].id)).hiddenBook, false)
+  for (const width of [380, 760, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const geometry = await page.locator('.library-organizer-dialog').evaluate(element => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+      client: element.clientWidth, scroll: element.scrollWidth, viewport: innerWidth }))
+    assert.ok(geometry.left >= 0 && geometry.right <= geometry.viewport + 1 && geometry.scroll <= geometry.client + 1, JSON.stringify(geometry))
+  }
+  if (process.env.ORGANIZER_TEST_SCREENSHOT) await page.screenshot({ path: process.env.ORGANIZER_TEST_SCREENSHOT, fullPage: true })
+  await page.locator('[data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('整理已保存'))
+  assert.equal((await Manga.findByPk(books[1].id)).hiddenBook, true)
+  assert.deepEqual(collections[0].list, [books[1].hash, books[0].id], 'Only one keeper reference is added to the existing collection')
+  assert.equal((await readingState.load()).progress[books[0].id].page, 2)
+  assert.equal(await page.evaluate(id => window.readingState.progress[id].page, books[0].id), 2)
+  await page.locator('[data-tab="history"]').click(); await page.locator('[data-undo]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  assert.equal((await Manga.findByPk(books[1].id)).hiddenBook, false)
+  assert.equal((await readingState.load()).progress[books[0].id], undefined)
+  await readingState.saveProgress(books[0].id, { page: 1, total: 2, time: 300 })
+  await page.keyboard.press('Escape'); await page.locator('.library-organizer-dialog').waitFor({ state: 'detached' })
+  await page.locator('[data-open-library-organizer]').click()
+  await page.locator('[data-book-id="neutral-0"]').check(); await page.locator('[data-book-id="neutral-1"]').check()
+  assert.equal(await page.locator('[data-progress-source]').inputValue(), books[0].id,
+    'Multiple saved progress records keep the keeper default instead of choosing the largest page number')
+  await readingState.applyOrganizerProgress(books[0].id, { expected: (await readingState.load()).progress[books[0].id], value: null })
+  await fs.rename(books[2].filepath, path.join(directory, 'moved-neutral-2'))
+  await page.locator('[data-tab="health"]').click(); await page.locator('[data-organizer="health"]').click()
+  await page.locator('[data-relocate="neutral-2"]').waitFor()
+  assert.match(await page.locator('[data-health-results]').innerText(), /已确认缺失/)
+  await page.locator('[data-relocate="neutral-2"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已取消定位'))
+  assert.ok(calls.includes('relocate-book'))
+  assert.equal(await page.locator('[data-organizer="remove-selected"]').isDisabled(), true, 'No records are selected by default')
+  await page.locator('[data-remove-missing="neutral-2"]').click()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  assert.match(await page.locator('[data-health-preview]').innerText(), /不会删除磁盘文件/)
+  assert.equal(await page.locator('[data-health-preview] .organizer-removal-list li').count(), 1)
+  assert.equal(await Manga.count(), 3, 'Opening a per-row deletion preview leaves the catalog intact')
+  await page.locator('[data-health-preview] [data-organizer="discard-preview"]').click()
+  assert.equal(await page.locator('[data-health-preview]').isHidden(), true)
+  assert.equal(await Manga.count(), 3, 'Canceling a deletion preview changes no records')
+  await page.locator('[data-missing-id="neutral-2"]').check()
+  assert.equal(await page.locator('[data-missing-all]').isChecked(), true)
+  await page.locator('[data-organizer="remove-selected"]').click()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  await page.locator('[data-missing-id="neutral-2"]').uncheck()
+  assert.equal(await page.locator('[data-health-preview]').isHidden(), true, 'Changing the deletion selection invalidates its preview')
+  await readingState.saveProgress(books[2].id, { page: 1, total: 2, time: 300 })
+  await page.locator('[data-missing-id="neutral-2"]').check()
+  await page.locator('[data-organizer="remove-selected"]').click()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  await page.locator('[data-health-preview] [data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已删除 1 本书库记录'))
+  assert.equal(await Manga.count(), 2)
+  assert.equal(await Metadata.count(), 3, 'Deleting a record retains its metadata')
+  assert.equal((await readingState.load()).progress[books[2].id].page, 1, 'Deleting a record retains its reading archive')
+  assert.equal(await page.locator('[data-health-book="neutral-2"]').count(), 0)
+  assert.equal(await page.locator('[data-organizer="remove-all"]').count(), 0, 'An empty report has no active delete-all action')
+  assert.match(await page.locator('[data-health-results]').innerText(), /没有需要清理的失联记录/)
+  assert.equal(await page.locator('[data-book-id="neutral-2"]').count(), 0, 'The catalog refreshes after removal')
+  await fs.access(path.join(directory, 'moved-neutral-2', '1.jpg'))
+  await page.locator('[data-tab="history"]').click()
+  assert.equal(await page.getByRole('button', { name: '恢复删除的书库记录' }).count(), 1)
+  await page.getByRole('button', { name: '恢复删除的书库记录' }).click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  assert.equal(await Manga.count(), 3)
+  assert.equal(await page.locator('[data-book-id="neutral-2"]').count(), 1, 'Undo restores the original record into the catalog')
+  await page.locator('[data-tab="health"]').click()
+  assert.equal(await page.locator('[data-missing-id="neutral-2"]').isChecked(), false, 'Undo clears obsolete deletion selections')
+
+  // Missing paths, an offline root and a wrong path type all use the actual
+  // service. Only the first two can be selected or sent to a deletion preview.
+  const offline = { id: 'offline-neutral', hash: 'hash-offline', filepath: path.join(directory, 'offline-disk', 'neutral'), type: 'folder', title: 'Neutral offline volume', status: 'tagged', tags: {} }
+  const invalid = { id: 'invalid-neutral', hash: 'hash-invalid', filepath: path.join(library, 'wrong-path-type'), type: 'folder', title: 'Neutral wrong path type', status: 'tagged', tags: {} }
+  await fs.writeFile(invalid.filepath, 'This is a regular file, not a folder')
+  for (const book of [offline, invalid]) { await Manga.create(book); await Metadata.create(book) }
+  await fs.rename(books[0].filepath, path.join(directory, 'moved-neutral-0'))
+  await page.locator('[data-organizer="health"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('检查已完成'))
+  assert.equal(await page.locator('[data-missing-id]:enabled').count(), 3)
+  assert.equal(await page.locator('[data-missing-id="invalid-neutral"]').isDisabled(), true)
+  assert.equal(await page.locator('[data-remove-missing="invalid-neutral"]').count(), 0)
+  assert.match(await page.locator('[data-health-book="offline-neutral"]').innerText(), /暂不可访问/)
+  assert.equal(await page.locator('[data-health-results] img,[data-health-results] script').count(), 0, 'Health rows escape book titles')
+  await page.locator('[data-missing-all]').check()
+  assert.equal(await page.locator('[data-missing-id]:checked').count(), 3)
+  await page.locator('[data-organizer="clear-missing-selection"]').click()
+  assert.equal(await page.locator('[data-missing-id]:checked').count(), 0)
+  await page.locator('[data-missing-id="neutral-0"]').check()
+  await page.locator('[data-missing-id="offline-neutral"]').check()
+  assert.equal(await page.locator('[data-missing-all]').evaluate(input => input.indeterminate), true)
+  assert.match(await page.locator('[data-missing-selected-count]').innerText(), /已选 2 \/ 3 本/)
+  if (process.env.ORGANIZER_HEALTH_TEST_SCREENSHOT) {
+    await page.locator('.organizer-content').evaluate(element => { element.scrollTop = 0 })
+    await page.screenshot({ path: process.env.ORGANIZER_HEALTH_TEST_SCREENSHOT, fullPage: true })
+  }
+  let releasePreview
+  removalPreviewGate = new Promise(resolve => { releasePreview = resolve })
+  await page.locator('[data-organizer="remove-selected"]').click()
+  await page.locator('.library-organizer-dialog[aria-busy="true"]').waitFor()
+  assert.equal(await page.locator('[data-organizer="remove-all"]').isDisabled(), true)
+  assert.equal(await page.locator('[data-missing-id]:enabled').count(), 0, 'Selection stays frozen while the deletion preview is being verified')
+  assert.equal(await page.locator('[data-remove-missing]:enabled').count(), 0)
+  releasePreview()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  assert.deepEqual(new Set(removalRequests.at(-1).bookIds), new Set([books[0].id, offline.id]))
+  assert.equal(await page.locator('[data-health-preview] .organizer-removal-list li').count(), 2)
+  assert.equal(await Manga.count(), 5)
+  for (const width of [380, 760, 1280]) {
+    await page.setViewportSize({ width, height: 900 })
+    const overflowing = await page.locator('.library-organizer-dialog, .organizer-missing-toolbar, .organizer-health-book, [data-health-preview]').evaluateAll(elements => elements
+      .filter(element => element.scrollWidth > element.clientWidth + 1).map(element => element.className))
+    assert.deepEqual(overflowing, [], 'Health selection and removal preview fit at width ' + width)
+  }
+  if (process.env.ORGANIZER_REMOVE_TEST_SCREENSHOT) {
+    await page.locator('[data-health-preview]').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: process.env.ORGANIZER_REMOVE_TEST_SCREENSHOT, fullPage: true })
+  }
+  await page.locator('[data-health-preview] [data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已删除 2 本书库记录'))
+  assert.equal(await Manga.count(), 3)
+  assert.ok(await Manga.findByPk(books[1].id), 'A healthy record is retained')
+  assert.ok(await Manga.findByPk(books[2].id), 'An unchecked missing record is retained')
+  assert.ok(await Manga.findByPk(invalid.id), 'An invalid path record is retained')
+  assert.equal(await Metadata.count(), 5)
+  assert.match(await page.locator('[data-missing-selected-count]').innerText(), /已选 0 \/ 1 本/)
+  await page.locator('[data-tab="history"]').click()
+  await page.getByRole('button', { name: '恢复删除的书库记录' }).click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  await page.locator('[data-tab="health"]').click()
+  assert.equal(await Manga.count(), 5)
+  assert.match(await page.locator('[data-missing-selected-count]').innerText(), /已选 0 \/ 3 本/)
+
+  await page.locator('[data-organizer="remove-all"]').click()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  assert.deepEqual(new Set(removalRequests.at(-1).bookIds), new Set([books[0].id, books[2].id, offline.id]), 'Delete all works without manually selecting records and excludes invalid or healthy paths')
+  await fs.rename(path.join(directory, 'moved-neutral-0'), books[0].filepath)
+  await page.locator('[data-health-preview] [data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status[data-failure="true"]')?.textContent.includes('重新检测'))
+  assert.equal(await Manga.count(), 5, 'A source that becomes accessible blocks the entire deletion')
+  assert.equal(await page.locator('[data-health-preview]').isHidden(), true)
+  assert.equal(await page.locator('[data-health-book="neutral-0"]').count(), 0, 'A rejected stale preview refreshes the report')
+  assert.match(await page.locator('[data-missing-selected-count]').innerText(), /已选 0 \/ 2 本/)
+  await fs.rename(books[0].filepath, path.join(directory, 'moved-neutral-0'))
+  await page.locator('[data-organizer="health"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('检查已完成'))
+  await page.locator('[data-organizer="remove-all"]').click()
+  await page.locator('[data-health-preview]:not([hidden])').waitFor()
+  assert.equal(await Manga.count(), 5)
+  await page.locator('[data-health-preview] [data-organizer="apply"]').click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已删除 3 本书库记录'))
+  assert.equal(await Manga.count(), 2)
+  assert.equal(await page.locator('[data-organizer="remove-all"]').count(), 0)
+  assert.equal(await page.locator('[data-missing-id="invalid-neutral"]').isDisabled(), true)
+  assert.equal((await readingState.load()).progress[books[2].id].page, 1)
+  await fs.access(path.join(directory, 'moved-neutral-0', '1.jpg'))
+  await fs.access(path.join(directory, 'moved-neutral-2', '1.jpg'))
+  await page.locator('[data-tab="history"]').click()
+  await page.getByRole('button', { name: '恢复删除的书库记录' }).click()
+  await page.waitForFunction(() => document.querySelector('.organizer-status')?.textContent.includes('已撤销本次整理'))
+  await page.locator('[data-tab="health"]').click()
+  assert.match(await page.locator('[data-missing-selected-count]').innerText(), /已选 0 \/ 3 本/)
+  await page.locator('[data-tab="health"]').focus(); await page.keyboard.press('End')
+  assert.equal(await page.locator('[data-tab="history"]').getAttribute('aria-selected'), 'true')
+  await page.keyboard.press('Home')
+  assert.equal(await page.locator('[data-tab="batch"]').getAttribute('aria-selected'), 'true')
+  await page.keyboard.press('Escape'); await page.locator('.library-organizer-dialog').waitFor({ state: 'detached' })
+  assert.deepEqual(errors, [])
+  assert.equal(await Manga.count(), 5)
+})

@@ -1,0 +1,29 @@
+{
+  "name": "yanruyu-reading-room-project",
+  "private": true,
+  "version": "1.6.16",
+  "description": "Reproducible source, isolated development and data-free packaging for the customized Yanruyu reading room",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.5.0"
+  },
+  "scripts": {
+    "dev": "node tools/project/dev.cjs",
+    "build": "node tools/project/build.cjs",
+    "package": "node tools/project/package.cjs",
+    "check": "node tools/project/check.cjs",
+    "test": "node tools/project/test.cjs",
+    "test:engineering": "node --test tools/tests/engineering.test.cjs",
+    "test:desktop": "node tools/test-isolated-desktop.cjs",
+    "test:backup-desktop": "node tools/test-data-protection-desktop.cjs",
+    "test:all": "node tools/project/test.cjs --all",
+    "release:audit": "node tools/project/audit.cjs",
+    "compact": "node tools/project/compact.cjs",
+    "manager:reference": "node tools/project/manager-reference.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "playwright": "1.63.0",
+    "rcedit": "5.0.2"
+  }
+}

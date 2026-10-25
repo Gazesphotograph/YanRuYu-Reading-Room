@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200" fill="none">
+  <defs>
+    <linearGradient id="paper" x1="100" y1="0" x2="1610" y2="1250" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/><stop offset=".48" stop-color="#EDF2F7"/><stop offset="1" stop-color="#E4ECF3"/>
+    </linearGradient>
+    <radialGradient id="light" cx="0" cy="0" r="1" gradientTransform="translate(730 210) rotate(65) scale(760 1080)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white"/><stop offset="1" stop-color="white" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fold" x1="600" y1="0" x2="1400" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity=".13"/><stop offset=".5" stop-color="white" stop-opacity=".76"/><stop offset="1" stop-color="#EDF5FC" stop-opacity=".15"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="830" y1="0" x2="1420" y2="1020" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0"/><stop offset=".32" stop-color="white" stop-opacity=".95"/><stop offset=".74" stop-color="#9DB9D1" stop-opacity=".22"/><stop offset="1" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="soft-edge"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs>
+  <path fill="url(#paper)" d="M0 0h1800v1200H0z"/>
+  <path fill="url(#light)" d="M0 0h1800v1200H0z"/>
+  <path d="M1070-180C1490 100 1030 180 1320 480S2030 620 1850 1150" stroke="#B9CEDF" stroke-opacity=".22" stroke-width="115" filter="url(#soft)"/>
+  <path d="M1110-180C1530 100 1070 180 1360 480S2070 620 1890 1150L2090 1300 2140-200Z" fill="url(#fold)"/>
+  <path d="M1110-180C1530 100 1070 180 1360 480S2070 620 1890 1150" stroke="url(#edge)" stroke-width="3" filter="url(#soft-edge)"/>
+  <path d="M-380 460C260 600 140 1000 760 1390" stroke="white" stroke-opacity=".5" stroke-width="170" filter="url(#soft)"/>
+  <path d="M-380 520C200 650 110 1030 680 1390" stroke="white" stroke-opacity=".56" stroke-width="2"/>
+</svg>

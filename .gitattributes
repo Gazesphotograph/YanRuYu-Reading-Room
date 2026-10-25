@@ -1,0 +1,13 @@
+* text=auto eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.vue text eol=lf
+*.exe binary
+*.dll binary
+*.png binary
+*.ico binary
