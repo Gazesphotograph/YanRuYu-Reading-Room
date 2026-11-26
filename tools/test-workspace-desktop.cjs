@@ -272,6 +272,9 @@ async function main() {
     await page.getByRole('button', { name:'清空选择', exact:true }).click();
     assert.equal(await batch.isDisabled(), true);
     console.log('PASS Page selection, cross-page batch preview, cancellation, scoped edits and undo through the library table');
+    const search = page.getByLabel('搜索书名、作者或标签');
+    await search.fill('neutral');
+    await page.waitForFunction(() => document.querySelector('#results').textContent.includes('共 14 本'));
     for (const book of twins) {
       const checkbox = page.locator(`[data-check-book="${book.id}"]`);
       if (!(await checkbox.count())) {
@@ -280,6 +283,11 @@ async function main() {
         else await page.getByRole('button', { name:'上一组书架' }).click();
       }
       await checkbox.check();
+      if (book.id === donor.id) {
+        await bookButton(donor.id).press('Enter');
+        await page.getByRole('dialog', { name:'书籍详情', exact:true }).waitFor();
+        await page.keyboard.press('Escape');
+      }
     }
     const compare = page.getByRole('button', { name:'对照所选书籍' });
     await compare.click();
@@ -298,6 +306,13 @@ async function main() {
     const hiddenTwinCount = list => list.filter(book => twins.some(twin=>twin.id === book.id) && book.hiddenBook).length;
     assert.equal(hiddenTwinCount(await invoke('load-book-list', false)), 1);
     assert.equal((await invoke('load-reading-state')).progress[keeper.id].page, 5);
+    const notice = page.locator('#filtered-book-notice');
+    await notice.getByText('所选书已隐藏，原查询已保留。').waitFor({ state:'attached' });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(bookId => document.activeElement.dataset.book === bookId, keeper.id);
+    assert.equal(await search.inputValue(), 'neutral');
+    assert.equal(await bookButton(keeper.id).getAttribute('data-selected'), '');
+    assert.equal(await page.locator(`[data-check-book="${keeper.id}"]`).isChecked(), true);
     await close(); await launch(); await nav('书库').click();
     await page.getByRole('button', { name:'整理历史', exact:true }).click();
     await page.getByRole('button', { name:'撤销这次整理' }).click();
@@ -392,6 +407,38 @@ async function main() {
     assert.equal(await page.getByLabel('搜索书名、作者或标签').inputValue(), 'River Studio');
     assert.equal(await bookButton(id).count(), 0);
     console.log('PASS Restart opens the chosen filtered table or featured room independently of the last active workspace');
+
+    const missing = books.find(book => book.id !== id && !twins.includes(book));
+    const parkedMissing = path.join(fixture, 'offline-book');
+    fs.renameSync(missing.filepath, parkedMissing);
+    const rescanned = await invoke('load-book-list', true);
+    assert.equal(rescanned.find(book => book.id === missing.id).exist, false);
+    const removalSearch = page.getByLabel('搜索书名、作者或标签');
+    const removalNotice = page.locator('#filtered-book-notice');
+    await removalSearch.fill(missing.title);
+    await page.waitForFunction(() => document.querySelector('#results').textContent.includes('共 1 本'));
+    await page.waitForFunction(bookId => document.querySelector(`#room [data-book="${bookId}"]`)?.closest('tr')?.textContent.includes('失联'), missing.id);
+    await bookButton(missing.id).press('Enter');
+    await page.getByRole('button', { name:'检查与移除失联记录' }).click();
+    await page.getByRole('button', { name:'删除所选记录' }).click();
+    await page.getByRole('button', { name:'确认删除 1 本记录' }).click();
+    await removalNotice.getByText('所选书已从书库移除，原查询已保留。').waitFor({ state:'attached' });
+    await page.keyboard.press('Escape');
+    const emptyAction = page.locator('#room').getByRole('button', { name:'查看全部藏书' });
+    await page.waitForFunction(() => document.activeElement.matches('#room .empty button'), null, { timeout:5000 }).catch(async error => {
+      const focused = await page.evaluate(() => document.activeElement.cloneNode(false).outerHTML);
+      throw new Error(`Expected keyboard focus on the empty-results action. Focused element: ${focused}`, { cause:error });
+    });
+    assert.equal(await emptyAction.isVisible(), true);
+    assert.equal(await removalSearch.inputValue(), missing.title);
+    assert.equal((await invoke('load-book-list', false)).some(book => book.id === missing.id), false);
+    await page.getByRole('button', { name:'整理历史', exact:true }).click();
+    await page.getByRole('button', { name:'恢复删除的书库记录' }).click();
+    await bookButton(missing.id).waitFor({ state:'attached' });
+    await page.keyboard.press('Escape');
+    assert.equal(await removalNotice.isVisible(), false);
+    fs.renameSync(parkedMissing, missing.filepath);
+    console.log('PASS Lost selection after real organizer merge and removal preserves the query, restores keyboard focus, and recovers the record through history');
 
     await page.locator('[data-action="settings"]').click();
     await page.getByRole('button', { name: '返回原界面' }).click();

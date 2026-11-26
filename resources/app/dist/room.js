@@ -380,6 +380,7 @@ function focusBook(id, reveal = false) {
     if (!notice.hidden && notice.dataset.showFilteredBook===id) target=notice;
   }
   if (!target && selectedId) target=document.querySelector(`#room button[data-book="${CSS.escape(selectedId)}"]`);
+  if (!target && workspace === 'library') target=$('#room .empty button');
   if (target && reveal) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   (target || (workspace === 'room' ? $('button[data-workspace="room"]') : $('[data-filter].active')))?.focus({preventScroll:true});
 }
@@ -446,15 +447,21 @@ function setWorkspace(next, bookId = '') {
 function showBookInLibrary(id) {
   dismiss();
   setWorkspace('library', id);
-  if (!visibleBooks().some(book => book.id === id)) showFilteredBook(id);
+  if (!visibleBooks().some(book => book.id === id)) {
+    showFilteredBook(id);
+    focusBook(id, true);
+  }
 }
-function showFilteredBook(id, reason = '这本书已移出当前筛选。') {
+function showFilteredBook(id) {
+  const book = state.books.find(book => book.id === id);
   const notice = $('#filtered-book-notice');
   notice.hidden = false;
-  notice.querySelector('[role="status"]').textContent=reason;
-  const button=notice.querySelector('[data-show-filtered-book]');
-  button.dataset.showFilteredBook = id || '';
-  button.hidden = !id;
+  const status = notice.querySelector('[role="status"]');
+  const reason = !book ? '所选书已从书库移除，原查询已保留。' : book.hiddenBook ? '所选书已隐藏，原查询已保留。' : '这本书已移出当前筛选。';
+  if (status.textContent !== reason) status.textContent = reason;
+  const button = notice.querySelector('[data-show-filtered-book]');
+  button.dataset.showFilteredBook = id;
+  button.hidden = !book;
 }
 function updateSelection() {
   if (spatialRoom && workspace === 'room') spatialRoom.selectedBook = selectedId;
@@ -659,6 +666,12 @@ function renderBooks() {
   textStatus.textContent=workspaceText.pending?'正在匹配已导入的页内文本…':workspaceText.error?'文本检索未完成：'+workspaceText.error:`页内文本匹配 ${workspaceText.matches.length} 本。`;
   const {books:matchingBooks,counts,favoriteCount}=libraryIndex.summarize(scope);
   const books=scope.featured?personalization.getFeaturedBooks(matchingBooks):matchingBooks;
+  const notice = $('#filtered-book-notice');
+  if (workspace === 'library' && !notice.hidden) {
+    const id = $('[data-show-filtered-book]').dataset.showFilteredBook;
+    if (books.some(book => book.id === id)) notice.hidden = true;
+    else showFilteredBook(id);
+  }
   if (workspace === 'library' && checkedBooks.size) {
     const ids = new Set(books.map(book => book.id));
     for (const id of checkedBooks) if (!ids.has(id)) checkedBooks.delete(id);
@@ -668,9 +681,11 @@ function renderBooks() {
   $('#room').className='room '+(state.view==='grid'?'grid-mode':'');
   $('#room').dataset.density=state.density;
   if (!slice.length) {
-    disposeGridTitles?.();disposeGridTitles=null;gridSignature='';
+    disposeGridTitles?.();disposeGridTitles=null;
     disposeRoom();
-    $('#room').innerHTML=`<div class="empty">${icon('book')}<h2>${state.books.length?'没有符合条件的书籍':'欢迎来到你的阅览室'}</h2><p>${scope.search?'换一个书名、作者或标签试试。':state.books.length?'可以查看全部藏书。':'选择漫画所在的文件夹，第一页会成为它的封面。'}</p><button class="pill-button primary" data-action="${state.books.length?'reset':'library'}">${state.books.length?'查看全部藏书':'选择书库文件夹'}</button></div>`;
+    const markup=`<div class="empty">${icon('book')}<h2>${state.books.length?'没有符合条件的书籍':'欢迎来到你的阅览室'}</h2><p>${scope.search?'换一个书名、作者或标签试试。':state.books.length?'可以查看全部藏书。':'选择漫画所在的文件夹，第一页会成为它的封面。'}</p><button class="pill-button primary" data-action="${state.books.length?'reset':'library'}">${state.books.length?'查看全部藏书':'选择书库文件夹'}</button></div>`;
+    if (gridSignature !== markup || !$('#room .empty')) $('#room').innerHTML=markup;
+    gridSignature=markup;
   } else if (state.view==='grid') {
     disposeRoom();
     const signature=JSON.stringify(slice.map(b=>[b.id,b.coverPath,b.mark,bookSubtitle(b),title(b)]));
@@ -710,7 +725,7 @@ function renderBooks() {
 }
 let lastFocus,lastFocusBook;
 function showModal(html, drawer=false) {
-  if(!$('#modal-root').children.length){lastFocus=document.activeElement;lastFocusBook=lastFocus?.dataset.book;}
+  if(!$('#modal-root').children.length){lastFocus=document.activeElement;lastFocusBook=lastFocus?.dataset.book||lastFocus?.dataset.showFilteredBook;}
   $('#modal-root').innerHTML=`<div class="overlay" data-overlay="true"><section class="${drawer?'drawer':'modal'}" role="dialog" aria-modal="true" aria-label="${drawer?'书籍详情':'阅览室设置'}">${html}</section></div>`;
   if (drawer && workspace) $('#modal-root .drawer').classList.add('workspace-detail');
   const modal=$('#modal-root .modal');
@@ -736,7 +751,7 @@ function dismiss() {
   root.replaceChildren();
   $('.shell').inert = !!state.reader;
   spatialRoom?.setSuspended(!!state.reader);
-  if (lastFocus?.isConnected) lastFocus.focus({preventScroll:true});
+  if (lastFocus?.isConnected && !lastFocus.closest('[hidden]')) lastFocus.focus({preventScroll:true});
   else if (lastFocusBook) focusBook(lastFocusBook, true);
   lastFocus = lastFocusBook = null;
 }
@@ -1014,12 +1029,14 @@ async function clearIdleCache() {
 async function load(scan=false) {
   if(scan)return window.YanruyuTasks.startScan({ openCenter: workspace !== 'desk' });
   if(state.loading){state.reloadPending=true;return;}
-  const selection={workspace,id:selectedId,index:-1,query:JSON.stringify(normalizeShelfQuery(workspace==='room'?roomQuery||{}:state)),focus:document.activeElement};
+  const selection={workspace,id:selectedId,index:-1,query:JSON.stringify(normalizeShelfQuery(workspace==='room'?roomQuery||{}:state))};
   if(selection.id)selection.index=visibleBooks().findIndex(book=>book.id===selection.id);
-  const focusId=selection.focus?.closest('#room')&&(selection.focus.dataset.book||selection.focus.dataset.checkBook);
   state.loading=true;
   try {
     const [books,collections]=await Promise.all([invoke('load-book-list',false),invoke('load-collection-list'),readingProfile.refresh()]);
+    const focus = document.activeElement;
+    const focusId = focus?.closest('#room') ? focus.dataset.book || focus.dataset.checkBook : focus?.dataset.showFilteredBook;
+    const focusInEmpty = focus?.matches('#room .empty button');
     state.books=books;state.collections=Array.isArray(collections)?collections:[];
     workspaceText.needsRefresh=true;
     rebuildLibraryIndex();gridSignature='';updateTagGroups();
@@ -1032,17 +1049,12 @@ async function load(scan=false) {
         const nearby=results[Math.min(Math.max(0,selection.index),Math.max(0,results.length-1))];
         selectedId=nearby?.id||'';
         if(nearby)state.page=Math.floor(results.indexOf(nearby)/state.perPage)+1;
-        if(workspace==='library'){
-          const current=state.books.find(book=>book.id===selection.id);
-          if(!current)showFilteredBook('', '所选书已从书库移除，原查询已保留。');
-          else if(current.hiddenBook)showFilteredBook(current.id, '所选书已隐藏，原查询已保留。');
-          else showFilteredBook(current.id);
-        }
+        if(workspace==='library')showFilteredBook(selection.id);
         if(returnId===selection.id)returnId=selectedId;
       }
     }
     renderBooks();restoreLibraryPosition();personalization.refresh();
-    if(sameScope&&focusId&&!selection.focus.isConnected&&returnId)focusBook(returnId,true);
+    if (sameScope && (focusId || focusInEmpty) && (!focus.isConnected || focus.closest('[hidden]'))) focusBook(returnId, true);
   } finally {
     state.loading=false;
     if(state.reloadPending){state.reloadPending=false;queueMicrotask(()=>load(false).catch(fail));}
@@ -1508,8 +1520,14 @@ async function closeReader(cancelPending=true) {
   pendingReaderClose=r.closing;
   try{return await r.closing;}finally{if(pendingReaderClose===r.closing)pendingReaderClose=null;r.closing=null;}
 }
+function restoreOrganizerFocus(opener) {
+  if (workspace !== 'library' && workspace !== 'room') return;
+  if (document.activeElement === document.body || !opener?.isConnected || opener.matches(':disabled') || opener.closest('[hidden]')) {
+    focusBook(selectedId, true);
+  }
+}
 const actions={
-  'compare-books':()=>openLibraryOrganizer({ bookIds:[...checkedBooks], entry:'compare' }),
+  'compare-books':()=>openLibraryOrganizer({ bookIds:[...checkedBooks], entry:'compare', onClose:restoreOrganizerFocus }),
   'edit-checked-books':()=>openLibraryOrganizer({ bookIds:[...checkedBooks], entry:'table-batch' }),
   'organizer-history':()=>openLibraryOrganizer({ entry:'history' }),
   'clear-table-selection':()=>{
@@ -1597,7 +1615,7 @@ document.addEventListener('click',e=>{
     if(el.dataset.collectBook)return collectionUI.open([el.dataset.collectBook]);
     if(el.dataset.moveBook)return operationsUI.fileOperation(el.dataset.moveBook,'move');
     if(el.dataset.recycleBook)return operationsUI.fileOperation(el.dataset.recycleBook,'recycle');
-    if(el.dataset.checkMissingBook){dismiss();return openLibraryOrganizer({bookIds:[el.dataset.checkMissingBook],entry:'health'});}
+    if(el.dataset.checkMissingBook){dismiss();return openLibraryOrganizer({bookIds:[el.dataset.checkMissingBook],entry:'health',onClose:restoreOrganizerFocus});}
     if(el.dataset.matchBook)return openReader(el.dataset.matchBook).then(()=>{if(state.reader?.book.id===el.dataset.matchBook)goPage(Number(el.dataset.matchPage));});
     if(el.dataset.changeCover)return chooseBookCover(el.dataset.changeCover);
     if(el.dataset.bookSource)return invoke('open-url',state.books.find(book=>book.id===el.dataset.bookSource).url);

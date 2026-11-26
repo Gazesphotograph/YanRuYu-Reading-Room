@@ -260,11 +260,12 @@ async function handleAction(context, button) {
   }
 }
 
-export async function openLibraryOrganizer({ bookIds = [], entry = 'batch' } = {}) {
+export async function openLibraryOrganizer({ bookIds = [], entry = 'batch', onClose } = {}) {
   styles();
   if (active?.dialog.open) { active.dialog.focus(); return; }
   const context = buildDialog(bookIds); active = context;
   const { dialog } = context;
+  const opener = document.activeElement;
   document.body.append(dialog);
   if (entry === 'table-batch') {
     context.tableScope = new Set(bookIds);
@@ -275,7 +276,11 @@ export async function openLibraryOrganizer({ bookIds = [], entry = 'batch' } = {
     dialog.querySelector('[data-include-hidden]').closest('label').hidden = true;
   }
   dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); });
-  dialog.addEventListener('close', () => { if (active === context) active = null; dialog.remove(); });
+  dialog.addEventListener('close', () => {
+    if (active === context) active = null;
+    dialog.remove();
+    onClose?.(opener);
+  });
   dialog.addEventListener('keydown', event => {
     event.stopPropagation();
     if (event.target.matches('[role="tab"]') && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {

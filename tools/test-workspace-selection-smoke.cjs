@@ -37,11 +37,22 @@ async function main(){
     assert.equal(await viewBook.evaluate(node=>node===document.activeElement),true);assert.equal(await search.inputValue(),'静物档案');
 
     model.books.find(book=>book.id===books[1].id).hiddenBook=false;await page.evaluate(()=>window.__galleryEmit('library-updated',{kind:'fixture-unhide'}));
-    await book(books[1].id).waitFor();await check(books[1].id).check();await check(books[2].id).check();await book(books[1].id).press('Enter');
+    await book(books[1].id).waitFor();
+    assert.equal(await viewBook.isVisible(),false);
+    await page.waitForFunction(id=>document.activeElement.dataset.book===id,books[1].id);
+    await check(books[1].id).check();await check(books[2].id).check();await book(books[1].id).press('Enter');
     model.books.find(book=>book.id===books[1].id).title='另一册';await page.evaluate(()=>window.__galleryEmit('library-updated',{kind:'fixture-metadata'}));
     await page.waitForFunction(()=>document.querySelectorAll('.library-table tbody tr').length===1);await page.keyboard.press('Escape');
     assert.equal(await viewBook.evaluate(node=>node===document.activeElement),true);assert.equal(await search.inputValue(),'静物档案');assert.equal(await check(books[2].id).isChecked(),true);
     await viewBook.press('Enter');await page.getByRole('heading',{name:'另一册',exact:true}).waitFor();await page.keyboard.press('Escape');
+    await book(books[2].id).press('Enter');await page.keyboard.press('Escape');
+    model.books.splice(model.books.findIndex(item=>item.id===books[2].id),1);
+    await page.evaluate(()=>window.__galleryEmit('library-updated',{kind:'fixture-delete-final-match'}));
+    const reset=page.locator('#room').getByRole('button',{name:'查看全部藏书'});
+    await reset.waitFor();
+    assert.equal(await reset.evaluate(node=>node===document.activeElement),true);
+    assert.equal(await search.inputValue(),'静物档案');
+    assert.match(await page.locator('#filtered-book-notice').innerText(),/从书库移除/);
     assert.deepEqual(errors,[]);
     console.log('PASS Selected-book deletion, hiding and filtering preserve the query, neighboring selection, retained checks and return focus.');
   } finally {await browser?.close();assert(path.resolve(fixture).startsWith(path.join(os.tmpdir(),'yanruyu-selection-return-')));fs.rmSync(fixture,{recursive:true,force:true});}
