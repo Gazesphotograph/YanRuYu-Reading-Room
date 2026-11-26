@@ -8,9 +8,17 @@ const {build} = require('./project/build.cjs');
 const {_electron} = require('./playwright-runtime.cjs');
 
 async function main() {
+  const packageArg = process.argv.find(arg => arg.startsWith('--package='));
+  const packaged = packageArg && fs.realpathSync.native(path.resolve(packageArg.slice('--package='.length)));
+  if (packaged && (!isWithin(path.join(root, 'out'), packaged) || packaged === path.join(root, 'out'))) {
+    throw new Error('Archive desktop tests only accept generated packages below out/.');
+  }
   const reusable=process.env.YANRUYU_TEST_BUILD&&path.resolve(process.env.YANRUYU_TEST_BUILD);
-  if(reusable&&!isWithin(path.join(root,'.build'),reusable))throw new Error('Invalid reusable build');
-  const target=reusable?{folder:reusable,app:path.join(reusable,'resources','app')}:build();
+  if(!packaged&&reusable&&!isWithin(path.join(root,'.build'),reusable))throw new Error('Invalid reusable build');
+  const folder = packaged || reusable;
+  const target=folder?{folder,app:path.join(folder,'resources','app')}:build();
+  const executable = packaged ? path.join(packaged, 'exhentai-manga-manager.exe') : electronExecutable();
+  const args = packaged ? [] : [target.app];
   const sharp=require(path.join(target.app,'node_modules','sharp'));
   const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-archive-reading-'));
   const data=path.join(fixture,'data'),library=path.join(fixture,'library'),input=path.join(fixture,'pages');
@@ -18,7 +26,7 @@ async function main() {
   const originals=new Map(),cases=[],errors=[],coldOpens=[];let application,page;
   const invoke=(channel,...args)=>page.evaluate(({channel,args})=>window.ipcRenderer.invoke(channel,...args),{channel,args});
   async function launch(){
-    application=await _electron.launch({executablePath:electronExecutable(),args:[target.app,'--enable-unsafe-swiftshader'],cwd:target.folder,env,timeout:45000});
+    application=await _electron.launch({executablePath:executable,args:[...args,'--enable-unsafe-swiftshader'],cwd:target.folder,env,timeout:45000});
     page=await application.firstWindow();page.setDefaultTimeout(30000);page.on('pageerror',error=>errors.push(error.message));
     await page.locator('#local-count').filter({hasText:/本/}).waitFor();
   }
@@ -136,7 +144,7 @@ async function main() {
     }
     for(const [file,hash] of originals)assert.equal(sha256(file),hash);assert.deepEqual(errors,[]);
     const output=path.join(root,'tools','.artifacts','reading-archives');fs.mkdirSync(output,{recursive:true});
-    fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({date:new Date().toISOString(),cases,layouts,coldOpens,cancellation:{milliseconds:cancellationMs,phase:'after extraction before cache validation'},errors,originalHashesPreserved:originals.size,build:target.folder},null,2));
+    fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({date:new Date().toISOString(),cases,layouts,coldOpens,cancellation:{milliseconds:cancellationMs,phase:'after extraction before cache validation'},errors,originalHashesPreserved:originals.size,build:target.folder,packaged:Boolean(packaged),executableSha256:sha256(executable)},null,2));
     console.log('PASS All archive formats return from the room to the same book; original archives and pages keep their hashes.');
   } finally {await close();if(!isWithin(os.tmpdir(),fixture)||!path.basename(fixture).startsWith('yanruyu-archive-reading-'))throw new Error('Unsafe archive fixture cleanup');fs.rmSync(fixture,{recursive:true,force:true});}
 }

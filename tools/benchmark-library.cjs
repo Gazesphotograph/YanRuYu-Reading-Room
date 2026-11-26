@@ -7,14 +7,80 @@ const { DatabaseSync } = require('node:sqlite');
 const { fs, path, root, sha256, electronExecutable } = require('./project/common.cjs');
 const { _electron } = require('./playwright-runtime.cjs');
 
+const distinctCover = { width: 240, height: 360, sampleWidth: 60, sampleHeight: 90, format: 'webp' };
+const fixtureId = n => 'fixture-' + String(n).padStart(5, '0');
+const coverFile = (directory, id) => path.join(directory, id + '.' + distinctCover.format);
+
+async function writeDistinctCovers(directory, from, to, sharp) {
+  const { width, height, sampleWidth, sampleHeight } = distinctCover;
+  let bytes = 0;
+  fs.mkdirSync(directory, { recursive: true });
+  for (let offset = from; offset < to; offset += 12) {
+    const covers = await Promise.all(Array.from({ length: Math.min(12, to - offset) }, (_, i) => {
+      const index = offset + i;
+      const pixels = Buffer.allocUnsafe(sampleWidth * sampleHeight * 3);
+      let random = index;
+      for (let y = 0; y < sampleHeight; y++) {
+        for (let x = 0; x < sampleWidth; x++) {
+          const start = (y * sampleWidth + x) * 3;
+          random = (Math.imul(random, 1664525) + 1013904223) >>> 0;
+          pixels[start] = (index + 3 * x + y + (random >>> 29)) & 255;
+          pixels[start + 1] = ((index >>> 5) + 2 * y + ((random >>> 25) & 7)) & 255;
+          pixels[start + 2] = (4 * x + (y < sampleHeight / 2 ? 40 : 100) + ((random >>> 21) & 7)) & 255;
+        }
+      }
+      pixels.writeUIntBE(index, 0, 3);
+      return sharp(pixels, { raw: { width: sampleWidth, height: sampleHeight, channels: 3 } })
+        .resize(width, height, { kernel: 'nearest' }).webp({ lossless: true, effort: 0 })
+        .toFile(coverFile(directory, fixtureId(index)));
+    }));
+    for (const cover of covers) bytes += cover.size;
+  }
+  return bytes;
+}
+
+async function sampleCoverGrid(page) {
+  await page.locator('#search').fill('');
+  await page.waitForFunction(() => document.querySelectorAll('.library-table [data-book]').length === 12);
+  return page.evaluate(async () => {
+    const times = [];
+    const coversPerSample = 6;
+    let previousFirstBook;
+    for (let step = 0; step <= 20; step++) {
+      const trigger = document.querySelector(step ? '[data-action="next"]' : '[data-view="grid"]');
+      if (!trigger || trigger.disabled) throw new Error('Cannot advance the cover grid');
+      const start = performance.now();
+      trigger.click();
+      while (true) {
+        const first = document.querySelector('.book-grid [data-book]')?.dataset.book;
+        const images = [...document.querySelectorAll('.book-grid [data-book] img')].slice(0, coversPerSample);
+        if (first && first !== previousFirstBook && images.length === coversPerSample &&
+            images.every(img => img.complete && img.naturalWidth > 0)) {
+          previousFirstBook = first;
+          break;
+        }
+        if (performance.now() - start > 5000) throw new Error('Cover grid decode timed out');
+        await new Promise(requestAnimationFrame);
+      }
+      await new Promise(requestAnimationFrame);
+      times.push(performance.now() - start);
+    }
+    return { entryMs: times[0], pageMs: times.slice(1), coversPerSample };
+  });
+}
+
 async function benchmark(folder) {
   const packaged = fs.existsSync(path.join(folder, 'exhentai-manga-manager.exe'));
   const executable = packaged ? path.join(folder, 'exhentai-manga-manager.exe') : electronExecutable();
   const workspace = process.argv.includes('--workspace');
+  const distinctCovers = process.argv.includes('--distinct-covers');
+  if (distinctCovers && !workspace) throw new Error('Distinct-cover sampling requires --workspace.');
   const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'build-manifest.json'), 'utf8'));
   const sharp = require(path.join(folder, 'resources/app/node_modules/sharp'));
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'yanruyu-library-bench-'));
+  const temp = fs.realpathSync.native(os.tmpdir());
+  const scratch = fs.mkdtempSync(path.join(temp, 'yanruyu-library-bench-'));
   const data = path.join(scratch, 'data'), library = path.join(scratch, 'library');
+  const coverDirectory = path.join(data, 'cover');
   const realBook = path.join(library, 'Benchmark reader');
   const env = { ...process.env, YANRUYU_DATA_DIR:data };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -30,6 +96,7 @@ async function benchmark(folder) {
     app = null;
   };
   const profile = { version:manifest.appVersion, view:workspace?'2.0-library-table':'original-grid', executableSha256:sha256(executable), sourceHashes:manifest.sourceHashes, cpu:os.cpus()[0].model,
+    coverMode: distinctCovers ? 'distinct' : 'shared', osDiskCacheEvicted: false,
     memoryGiB:Math.round(os.totalmem()/2**30), platform:os.release(), tempVolume:path.parse(scratch).root, samples:[] };
   const output = path.join(root, 'tools', '.artifacts', 'library-benchmark');
   fs.mkdirSync(output, { recursive:true });
@@ -59,8 +126,12 @@ async function benchmark(folder) {
     profile.display = await page.evaluate(()=>({ width:innerWidth,height:innerHeight,devicePixelRatio }));
     profile.gpu = await app.evaluate(async ({ app })=>(await app.getGPUInfo('basic')).gpuDevice.map(g=>({ vendorId:g.vendorId, deviceId:g.deviceId, active:g.active })));
     await close();
-    let previous = 1;
+    let previous = 1, coverBytes = 0;
     for (const count of [10000,30000]) {
+      if (distinctCovers) {
+        console.log(`Generating ${count - previous} distinct WebP covers for ${count} rows.`);
+        coverBytes += await writeDistinctCovers(coverDirectory, previous, count, sharp);
+      }
       const db = new DatabaseSync(path.join(data,'database.sqlite'));
       try {
         db.prepare('ATTACH DATABASE ? AS metadata_db').run(path.join(data,'metadata.sqlite'));
@@ -69,14 +140,16 @@ async function benchmark(folder) {
         const metadata = db.prepare('INSERT INTO metadata_db.Metadata (hash,title,status,tags,createdAt,updatedAt) VALUES (?,?,?,?,?,?)');
         const timestamp = new Date(seed.createdAt).toISOString();
         for (let n=previous; n<count; n++) {
-          const id = 'fixture-'+String(n).padStart(5,'0'), tags = JSON.stringify({ artist:['Studio '+(n%200)], other:['Geometry'] });
-          row.run(id,id,'folder',path.join(library,id),id,seed.coverPath,'tagged',4,tags,timestamp,timestamp);
+          const id = fixtureId(n), tags = JSON.stringify({ artist:['Studio '+(n%200)], other:['Geometry'] });
+          const cover = distinctCovers ? coverFile(coverDirectory, id) : seed.coverPath;
+          row.run(id,id,'folder',path.join(library,id),id,cover,'tagged',4,tags,timestamp,timestamp);
           metadata.run(id,id,'tagged',tags,timestamp,timestamp);
         }
         db.exec('COMMIT');
       } finally { db.close(); }
       previous = count;
       const samples = { count, launchMs:[], searchMs:[], turnMs:[] };
+      if (distinctCovers) samples.coverFixture = { ...distinctCover, files: count - 1, bytes: coverBytes };
       for (let i=0; i<30; i++) {
         const start = performance.now();
         await launch();
@@ -106,6 +179,11 @@ async function benchmark(folder) {
         }
         return times;
       }, count);
+      if (distinctCovers) {
+        samples.coverGrid = await sampleCoverGrid(page);
+        samples.coverGrid.pageP95Ms = p95(samples.coverGrid.pageMs);
+        await page.locator('[data-view="table"]').click();
+      }
       await page.locator('#search').fill('Benchmark reader');
       await page.locator(`#room [data-book="${seed.id}"]`).dblclick();
       await page.waitForSelector('.reader-body img');
@@ -114,7 +192,8 @@ async function benchmark(folder) {
         for (let i=0; i<102; i++) {
           const num = i%2+1, start = performance.now();
           slider.value=num; slider.dispatchEvent(new Event('input',{bubbles:true}));
-          while (!document.querySelector(`[data-reader-page="${num}"] img`)?.naturalWidth) {
+          while (document.querySelector('#reader-page')?.textContent !== `${num} / 4` ||
+                 !document.querySelector(`[data-reader-page="${num}"] img`)?.naturalWidth) {
             if (performance.now()-start>5000) throw Error('Page flip timed out');
             await new Promise(requestAnimationFrame);
           }
@@ -136,8 +215,9 @@ async function benchmark(folder) {
     }
   } finally {
     await close();
-    if (path.dirname(fs.realpathSync(scratch)) !== fs.realpathSync(os.tmpdir()) || !path.basename(scratch).startsWith('yanruyu-library-bench-')) throw Error('Unexpected fixture path');
-    fs.rmSync(scratch,{ recursive:true,force:true,maxRetries:6,retryDelay:150 });
+    const resolved = fs.realpathSync.native(scratch);
+    if (path.dirname(resolved) !== temp || !path.basename(resolved).startsWith('yanruyu-library-bench-')) throw Error('Unexpected fixture path');
+    await fs.promises.rm(resolved,{ recursive:true,force:true,maxRetries:6,retryDelay:150 });
   }
 }
 if (!process.argv[2]) throw Error('Provide the unpacked Windows release directory to measure.');
