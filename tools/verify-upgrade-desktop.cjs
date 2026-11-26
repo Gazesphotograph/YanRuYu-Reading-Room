@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const { once } = require('node:events');
 const { fs, path, root, isWithin, sha256, listSourceFiles } = require('./project/common.cjs');
 const { auditRelease } = require('./project/audit.cjs');
@@ -12,6 +12,9 @@ const executable = 'exhentai-manga-manager.exe';
 const note = 'The quiet garden bridge is surrounded by birch trees.';
 const readJson = filename => JSON.parse(fs.readFileSync(filename, 'utf8'));
 const pointer = name => readJson(path.join(root, '.build', name));
+const protectedFiles = ['database.sqlite', 'metadata.sqlite', 'setting.json', 'collectionList.json',
+  'reading-state.json', 'library-organizer.json', 'local-search.json'];
+const dataHashes = folder => Object.fromEntries(protectedFiles.map(name => [name, sha256(path.join(folder, name))]));
 
 function prepareRuntime(program) {
   const app = path.join(program, 'resources', 'app');
@@ -68,6 +71,10 @@ function replaceRuntime(testCase, stableRuntime, previewRuntime) {
 }
 
 async function verify(stableArchive, previewRuntime) {
+  assert.equal(process.platform, 'win32');
+  const identity = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true });
+  const sid = identity.match(/"(S-1-[\d-]+)"/)?.[1];
+  assert.ok(sid, 'The current Windows account SID is required for the isolated ACL check.');
   const stableDigest = sha256(stableArchive);
   assert.equal(stableDigest, stableHash, 'Use the Windows x64 ZIP from the published v1.6.16 release.');
   const previewAudit = auditRelease(previewRuntime);
@@ -86,6 +93,7 @@ async function verify(stableArchive, previewRuntime) {
   const stableRuntime = path.join(fixture, 'stable-runtime');
   const library = path.join(fixture, 'library');
   const backup = path.join(fixture, 'historical.yru-backup');
+  const changedBackup = path.join(fixture, 'changed.yru-backup');
   const pictures = new Map();
   const output = path.join(root, 'tools', '.artifacts', 'historical-upgrade');
   const results = [];
@@ -130,9 +138,9 @@ async function verify(stableArchive, previewRuntime) {
     const settings = await invoke('load-setting');
     return {
       books: books.sort((a, b) => a.id.localeCompare(b.id)).map(book => {
-        const { id, title, filepath, coverPath, pageCount, readCount, tags, mark, hiddenBook } = book;
+        const { id, title, filepath, coverPath, pageCount, readCount, tags, mark, hiddenBook, exist } = book;
         assert.ok(isWithin(path.join(store, 'cover'), coverPath), 'Cover must resolve inside this store.');
-        return { id, title, filepath, pageCount, readCount, tags, mark, hiddenBook, coverDigest: sha256(coverPath),
+        return { id, title, filepath, pageCount, readCount, tags, mark, hiddenBook, exist, coverDigest: sha256(coverPath),
           mergedInto: organizer.find(entry => entry.id === id)?.mergedInto };
       }),
       progress: reading.progress,
@@ -146,21 +154,23 @@ async function verify(stableArchive, previewRuntime) {
     };
   }
 
-  async function restoreHistoricalBackup(testCase) {
-    await launch(testCase, false);
+  async function inspectBackup(filename) {
     await application.evaluate(({ app, dialog }, filename) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filename] });
       app.relaunch = () => {};
-    }, backup);
+    }, filename);
     const inspected = await invoke('backup-inspect');
     assert.equal(inspected.summary.books, 3);
+    return inspected.token;
+  }
+
+  async function awaitRestoreExit(restore) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30000);
     const exit = once(application.process(), 'exit', { signal: controller.signal });
+    let outcome;
     try {
-      const restored = await invoke('backup-restore', inspected.token);
-      assert.equal(restored.restartRequired, true);
-      assert.deepEqual(await exit, [0, null]);
+      outcome = await Promise.all([restore(), exit]);
     } finally {
       clearTimeout(timer);
       controller.abort();
@@ -168,6 +178,97 @@ async function verify(stableArchive, previewRuntime) {
     }
     await application.close();
     application = page = null;
+    return outcome;
+  }
+
+  async function restoreHistoricalBackup(testCase) {
+    await launch(testCase, false);
+    const token = await inspectBackup(backup);
+    const [restored, exit] = await awaitRestoreExit(() => invoke('backup-restore', token));
+    assert.equal(restored.restartRequired, true);
+    assert.deepEqual(exit, [0, null]);
+  }
+
+  async function verifyInterruptedRestore(testCase, historical, keeperId) {
+    const token = await inspectBackup(changedBackup);
+    const before = dataHashes(testCase.store);
+    const control = path.join(testCase.store, '.data-protection');
+    const journalPath = path.join(control, 'restore-journal.json');
+    await application.evaluate(({ app }) => {
+      const { createRequire } = process.getBuiltinModule('module');
+      const path = process.getBuiltinModule('path');
+      const requireApp = createRequire(path.join(app.getAppPath(), 'package.json'));
+      const { BackupService } = requireApp('./modules/backup_service');
+      const restore = BackupService.prototype.restoreBackup;
+      BackupService.prototype.restoreBackup = function (filename, options) {
+        return restore.call(this, filename, { ...options, afterInstall(name) {
+          if (name === 'reading-state.json') process.kill(process.pid, 'SIGKILL');
+        } });
+      };
+    });
+    const [, [code, signal]] = await awaitRestoreExit(() => assert.rejects(invoke('backup-restore', token)));
+    assert.ok(signal || code !== 0, 'The restore must terminate the process instead of returning normally.');
+    const journal = readJson(journalPath);
+    assert.equal(journal.phase, 'installing');
+    assert.equal(readJson(path.join(testCase.store, 'reading-state.json')).progress[keeperId].page, 4);
+    assert.notEqual(sha256(path.join(testCase.store, 'database.sqlite')), before['database.sqlite']);
+    assert.equal(sha256(path.join(journal.rollbackRoot, 'reading-state.json')), before['reading-state.json']);
+    assert.equal(sha256(path.join(journal.rollbackRoot, 'database.sqlite')), before['database.sqlite']);
+
+    await launch(testCase, true);
+    assert.deepEqual(await snapshot(testCase.store), historical, `${testCase.mode}: startup after interrupted restore`);
+    assert.deepEqual(dataHashes(testCase.store), before);
+    for (const filename of [journalPath, journal.stageRoot, journal.rollbackRoot]) assert.equal(fs.existsSync(filename), false);
+  }
+
+  async function verifyReadOnlyRestore(testCase, historical) {
+    const token = await inspectBackup(changedBackup);
+    const before = dataHashes(testCase.store);
+    const control = path.join(testCase.store, '.data-protection');
+    const denied = [];
+    const icacls = (...args) => execFileSync('icacls.exe', args, { stdio: 'pipe', windowsHide: true });
+    try {
+      for (const directory of [control, testCase.store]) {
+        const resolved = fs.realpathSync.native(directory);
+        assert.equal(resolved, directory);
+        assert.ok(isWithin(fixture, resolved) && resolved !== fixture);
+        icacls(resolved, '/deny', `*${sid}:(WD,AD,DC)`);
+        denied.push(resolved);
+        assert.throws(() => fs.mkdirSync(path.join(resolved, 'fixture-write-probe')), { code: /EACCES|EPERM/ });
+      }
+      await assert.rejects(invoke('backup-restore', token), /EACCES|EPERM/);
+      assert.deepEqual(dataHashes(testCase.store), before, `${testCase.mode}: rejected read-only restore changed data`);
+      assert.equal(fs.existsSync(path.join(control, 'restore-journal.json')), false);
+    } finally {
+      const removed = [];
+      for (const directory of denied.reverse()) {
+        try { icacls(directory, '/remove:d', `*${sid}`); } catch (error) { removed.push(error); }
+      }
+      if (removed.length) throw new AggregateError(removed, 'Could not remove the temporary fixture ACL.');
+    }
+    assert.deepEqual(await snapshot(testCase.store), historical, `${testCase.mode}: read-only restore must leave the app usable`);
+  }
+
+  async function verifyOfflineLibrary(testCase, historical) {
+    await close();
+    const disconnected = path.join(fixture, 'disconnected-library');
+    fs.renameSync(library, disconnected);
+    try {
+      await launch(testCase, true);
+      const report = await invoke('organizer-health');
+      assert.equal(report.libraryAvailable, false);
+      assert.equal(report.unavailable, historical.books.length);
+      assert.equal(report.missing, 0);
+      await assert.rejects(invoke('load-book-list', true), /ENOENT|暂不可访问/);
+      assert.deepEqual(await snapshot(testCase.store), historical, `${testCase.mode}: offline library and failed scan must preserve records`);
+    } finally {
+      try { await close(); } finally { fs.renameSync(disconnected, library); }
+    }
+    await launch(testCase, true);
+    const online = await invoke('organizer-health');
+    assert.equal(online.present, historical.books.length);
+    assert.equal(online.unavailable, 0);
+    assert.deepEqual(await snapshot(testCase.store), historical, `${testCase.mode}: reconnected library`);
   }
 
   try {
@@ -236,6 +337,12 @@ async function verify(stableArchive, previewRuntime) {
     assert.equal(exported.success, true);
     assert.equal(exported.summary.books, 3);
     assert.equal(exported.summary.readingRecords, 2);
+    await invoke('save-book', { id: keeper.id, title: 'Changed by interrupted restore' });
+    await invoke('save-reading-progress', keeper.id, { page: 4, total: 4, time: historical.progress[keeper.id].time + 1000, source: 'room' });
+    await application.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, changedBackup);
+    assert.equal((await invoke('backup-export', { includeCovers: true })).success, true);
     await close();
     console.log('PASS The published 1.6.16 executable produced one historical backup with three books and two reading positions.');
 
@@ -257,6 +364,9 @@ async function verify(stableArchive, previewRuntime) {
       await close();
       await launch(testCase, true);
       assert.deepEqual(await snapshot(testCase.store), historical, `${mode}: restart in the upgraded app`);
+      await verifyInterruptedRestore(testCase, historical, keeper.id);
+      await verifyReadOnlyRestore(testCase, historical);
+      await verifyOfflineLibrary(testCase, historical);
       const { memberships } = await invoke('collection-command', { action: 'list' });
       assert.deepEqual(memberships[collection.id], { bookIds: [keeper.id, sketch.id], unresolved: [] });
       const resume = page.locator('[data-desk-resume]');
@@ -274,8 +384,9 @@ async function verify(stableArchive, previewRuntime) {
       for (const [file, digest] of pictures) assert.equal(sha256(file), digest);
       await close();
       if (mode !== 'user-data') assert.equal(fs.existsSync(path.join(testCase.systemStore, 'database.sqlite')), false);
-      results.push({ mode, books: books.length, originalPages: pictures.size, continuedPage: 3, undoVerified: true });
-      console.log(`PASS ${mode}: same historical data after upgrade and restart, real page-three resume, undo, and unchanged original pages.`);
+      results.push({ mode, books: books.length, originalPages: pictures.size, continuedPage: 3, undoVerified: true,
+        interruptedRestore: true, readOnlyRestore: true, offlineLibrary: true });
+      console.log(`PASS ${mode}: upgraded and restarted, rolled back an interrupted restore, rejected a read-only restore, recovered access after disconnect, resumed page three and undid the old merge.`);
     }
     assert.deepEqual(errors, []);
     fs.mkdirSync(output, { recursive: true });
