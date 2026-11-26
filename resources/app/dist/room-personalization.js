@@ -1,3 +1,4 @@
+import { localCover } from './room-cover.js';
 import { THEMES } from './room-themes.js';
 import { ROOM_LAYOUTS, ROOM_FURNITURE, normalizeRoomPersonalization, normalizeRoomOptions, selectFeaturedBooks, summarizeReadingProgress, validFeaturedId } from './room-personalization-state.js';
 import { RoomAmbientSound } from './room-ambient.js';
@@ -5,14 +6,6 @@ import { RoomAmbientSound } from './room-ambient.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const title=book=>String(book?.title_jpn||book?.title||'未命名书籍');
 const dateText=time=>{try{return new Intl.DateTimeFormat('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(time);}catch{return '未知时间';}};
-function localCover(book) {
-  if(!book?.coverPath)return '';
-  const value=String(book.coverPath).replace(/\\/g,'/');
-  if(value.startsWith('file:')){try{const url=new URL(value);return url.protocol==='file:'?url.href:'';}catch{return '';}}
-  if(value.startsWith('//'))return 'file:'+value.split('/').map(encodeURIComponent).join('/');
-  if(!/^[A-Za-z]:\//.test(value)&&!value.startsWith('/'))return '';
-  return 'file:///'+value.replace(/^\//,'').split('/').map((part,index)=>index===0&&/^[A-Za-z]:$/.test(part)?part:encodeURIComponent(part)).join('/');
-}
 const tabs=[{id:'room',name:'布置与声音'},{id:'featured',name:'精选陈列'},{id:'stats',name:'阅读统计'}];
 const personalIcon=path=>`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${path}"/></svg>`;
 
@@ -57,8 +50,8 @@ export function createRoomPersonalization({storage,getState,getScene,showModal,d
   }
 
   function statsMarkup() {
-    const state=getState(),stats=summarizeReadingProgress(state.books,state.progress),counts=[['有阅读记录',stats.recorded],['阅读中',stats.reading],['到达末页',stats.finished],['近 7 天有记录',stats.recentWeek]],bars=[['未开始',stats.unread],['阅读中',stats.reading],['到达末页',stats.finished]];
-    return `<section aria-labelledby="personal-stats-title"><div class="personal-section-title"><h3 id="personal-stats-title">你的本地阅读档案</h3><span>${stats.total} 本可见藏书</span></div><div class="personal-stats">${counts.map(([label,count])=>`<div><strong>${count}<small> 本</small></strong><span>${label}</span></div>`).join('')}</div><div class="personal-stat-bars" aria-label="书库阅读进度分布">${bars.map(([label,count])=>`<div><span>${label}</span><div class="personal-stat-track"><i style="width:${stats.total?count/stats.total*100:0}%"></i></div><strong>${count}</strong></div>`).join('')}</div><p class="personal-note">依据当前书库的已保存进度统计，不计隐藏书籍。“到达末页”表示最近保存的位置在最后一页；未记录阅读时长，不推算累计阅读量。</p><h3>最近保存的阅读位置</h3><ol class="personal-recent">${stats.recent.map(record=>`<li><button type="button" data-personal-book="${esc(record.id)}"><strong>${esc(title(record.book))}</strong><span>第 ${record.page} / ${record.total} 页 · ${esc(dateText(record.time))}</span></button></li>`).join('')||'<li class="personal-note">还没有阅读记录。翻开一本书，保存的进度会出现在这里。</li>'}</ol></section>`;
+    const state=getState(),stats=summarizeReadingProgress(state.books,state.progress,Date.now(),state.visits),counts=[['有阅读记录',stats.recorded],['阅读中',stats.reading],['到达末页',stats.finished],['近 7 天有记录',stats.recentWeek]],bars=[['未开始',stats.unread],['阅读中',stats.reading],['到达末页',stats.finished]];
+    return `<section aria-labelledby="personal-stats-title"><div class="personal-section-title"><h3 id="personal-stats-title">你的本地阅读档案</h3><span>${stats.total} 本可见藏书</span></div><div class="personal-stats">${counts.map(([label,count])=>`<div><strong>${count}<small> 本</small></strong><span>${label}</span></div>`).join('')}</div><div class="personal-stat-bars" aria-label="书库阅读进度分布">${bars.map(([label,count])=>`<div><span>${label}</span><div class="personal-stat-track"><i style="width:${stats.total?count/stats.total*100:0}%"></i></div><strong>${count}</strong></div>`).join('')}</div><p class="personal-note">依据已保存进度和打开记录统计，不计隐藏书籍。“到达末页”表示保存的位置在最后一页；外部阅读器未返回页码时仅保留打开记录。</p><h3>最近保存的阅读记录</h3><ol class="personal-recent">${stats.recent.map(record=>`<li><button type="button" data-personal-book="${esc(record.id)}"><strong>${esc(title(record.book))}</strong><span>${record.page?`第 ${record.page} / ${record.total} 页`:'未记录页码'} · ${esc(dateText(record.time))}</span></button></li>`).join('')||'<li class="personal-note">还没有阅读记录。翻开一本书，保存的进度会出现在这里。</li>'}</ol></section>`;
   }
 
   function renderFeatured() {

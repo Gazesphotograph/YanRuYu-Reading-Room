@@ -87,15 +87,18 @@ async function main() {
       child.once('exit', code => { clearTimeout(timeout); resolve(code); });
     });
   }
-  async function setProgressAndPreferences(id, progress, theme) {
-    await page.evaluate(async ({ id, progress, theme }) => {
+  async function setProgressAndPreferences(id, progress, theme, preview) {
+    await page.evaluate(async ({ id, progress, theme, preview }) => {
       window.readingState.stage(id, progress);
       await window.readingState.flush();
       localStorage.setItem('room-theme', JSON.stringify(theme));
       localStorage.setItem('room-view', JSON.stringify('grid'));
+      localStorage.setItem('room-workspace-preview', JSON.stringify(preview));
+      localStorage.setItem('room-workspace-start-page', JSON.stringify(preview ? 'library' : 'desk'));
+      localStorage.setItem('room-workspace-library-view', JSON.stringify(preview ? 'table' : 'grid'));
       localStorage.setItem('reading-room-interface', 'room');
       await globalThis.YanruyuClientState.flush();
-    }, { id, progress, theme });
+    }, { id, progress, theme, preview });
   }
 
   try {
@@ -109,7 +112,7 @@ async function main() {
     const first = { ...books[0], title: 'Saved neutral book title', mark: true, readCount: 7 };
     await invoke('save-book', first);
     const savedProgress = { page: 2, total: 4, offset: 0.33, time: 1789280000000, source: 'room' };
-    await setProgressAndPreferences(first.id, savedProgress, 'forest');
+    await setProgressAndPreferences(first.id, savedProgress, 'forest', true);
     pass('Synthetic library, bookmarks and preferences are saved through real preload IPC in a separate data directory');
 
     const exported = await invoke('backup-export', { includeCovers: true });
@@ -149,7 +152,7 @@ async function main() {
     const current = changedBooks.find(book => book.id === first.id);
     assert.ok(current, 'The rescan must retain the first book identity');
     await invoke('save-book', { ...current, title: 'Changed after backup', mark: false, readCount: 99 });
-    await setProgressAndPreferences(first.id, { page: 4, total: 4, offset: 0, time: 1789290000000, source: 'classic' }, 'acid');
+    await setProgressAndPreferences(first.id, { page: 4, total: 4, offset: 0, time: 1789290000000, source: 'classic' }, 'acid', false);
     assert.equal((await invoke('load-reading-state')).progress[first.id].page, 4);
     assert.equal((await invoke('load-ui-state')).values['room-theme'], JSON.stringify('acid'));
     pass('A second book, modified metadata, page four and a different theme create genuinely different current data');
@@ -182,6 +185,8 @@ async function main() {
     assert.equal(preferences.theme, JSON.stringify('forest'));
     assert.equal(preferences.view, JSON.stringify('grid'));
     assert.equal(preferences.activeTheme, 'forest');
+    await page.locator('.library-table tbody tr').first().waitFor();
+    assert.equal(await page.locator('.workspace-nav [aria-current="page"]').textContent(), '书库');
     pass('Restart restores the shared reading profile and applies backed-up preferences over the previous browser state');
 
     await close();

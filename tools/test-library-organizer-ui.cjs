@@ -56,7 +56,7 @@ test('organizer UI previews, applies and undoes edits, merges and selective miss
     'organizer-preview-remove-missing': 'previewRemoveMissing' }
   server = http.createServer(async (request, response) => {
     try {
-      const filename = request.url === '/library-organizer.js' ? 'library-organizer.js' : request.url === '/library-organizer.css' ? 'library-organizer.css' : null
+      const filename = ['/library-organizer.js', '/library-organizer.css', '/room-cover.js'].includes(request.url) ? request.url.slice(1) : null
       if (filename) {
         response.writeHead(200, { 'Content-Type': filename.endsWith('.js') ? 'text/javascript' : 'text/css' })
         response.end(await fs.readFile(path.join(__dirname, '../resources/app/dist', filename))); return

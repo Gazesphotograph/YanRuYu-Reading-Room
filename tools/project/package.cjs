@@ -8,10 +8,10 @@ const { keepRuntimeFile, runtimeLocales } = require('./lean-runtime.cjs');
 const { compactRuntime } = require('./compact.cjs');
 const { spawnSync } = require('node:child_process');
 
-function packageApp() {
+function packageApp({ preview = false } = {}) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('The bundled 7-Zip/reader support Windows x64 packaging only.');
   const built = build();
-  const folder = uniqueDirectory(path.join(root, 'out'), `yanruyu-${built.manifest.appVersion}-win32-x64`);
+  const folder = uniqueDirectory(path.join(root, 'out'), `yanruyu-${preview?'2.0-preview-':''}${built.manifest.appVersion}-win32-x64`);
   const electronPath = electronExecutable();
   const electronDist = path.dirname(electronPath);
   for (const file of walk(electronDist)) {
@@ -28,6 +28,7 @@ function packageApp() {
   copyFile(path.join(root, 'LICENSE'), path.join(folder, 'YANRUYU-LICENSE.txt'));
   fs.writeFileSync(path.join(folder, 'build-manifest.json'), JSON.stringify({
     ...built.manifest,
+    developmentPreview: preview,
     sourceHashes: { ...built.manifest.sourceHashes, '优化程序磁盘占用.ps1': sha256(compactScript) },
     runtimeLocales: [...runtimeLocales],
     executable: { file: 'exhentai-manga-manager.exe', sha256: sha256(executable), icon: 'resources/app/public/icon.ico', resourceEditor: 'rcedit@5.0.2' },
@@ -50,7 +51,7 @@ function packageApp() {
   if (zipResult.error || zipResult.status !== 0) throw new Error(zipResult.error?.message || zipResult.stderr || 'Release archive could not be created.');
   const archiveCheck = spawnSync(path.join(root, 'resources', 'extraResources', '7z.exe'), ['t', archive], { encoding: 'utf8', windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
   if (archiveCheck.error || archiveCheck.status !== 0) throw new Error('Release archive verification failed.');
-  writePointer('last-release.json', { folder, archive, archiveBytes: fs.statSync(archive).size });
+  writePointer(preview?'last-preview.json':'last-release.json', { folder, archive, archiveBytes: fs.statSync(archive).size });
   console.log(`Clean unpacked release: ${folder}`);
   console.log('Existing installations and user data have not been updated.');
   console.log(`Verified ZIP release: ${archive} (${fs.statSync(archive).size} bytes)`);
@@ -58,6 +59,6 @@ function packageApp() {
 }
 
 if (require.main === module) {
-  try { packageApp(); } catch (error) { console.error(error.message); process.exitCode = 1; }
+  try { packageApp({ preview:process.argv.includes('--preview') }); } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
 module.exports = { packageApp };

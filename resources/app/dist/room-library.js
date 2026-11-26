@@ -1,3 +1,5 @@
+import { compileClassicQuery } from './room-classic-query.js';
+
 // Build text and tag indexes once per library refresh, rather than parsing every
 // book's metadata on each keypress, filter change or return from the reader.
 const collator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
@@ -7,15 +9,21 @@ export const bookTitle = book => book.title_jpn || book.title || '未命名书�
 export function bookTags(book) {
   let tags = book.tags;
   if (typeof tags === 'string') { try { tags = JSON.parse(tags); } catch { tags = {}; } }
-  if (!tags || typeof tags !== 'object' || Array.isArray(tags)) return [];
+  if (!tags || typeof tags !== 'object' || Array.isArray(tags)) tags = {};
   const seen = new Set();
-  return Object.entries(tags).flatMap(([group, items]) => (Array.isArray(items) ? items : [items]).flatMap(item => {
+  const result = Object.entries(tags).flatMap(([group, items]) => (Array.isArray(items) ? items : [items]).flatMap(item => {
     if (typeof item !== 'string' && typeof item !== 'number') return [];
     const value = String(item).trim(), key = tagKey(group, value);
     if (!value || seen.has(key)) return [];
     seen.add(key);
     return [{ group, value, key }];
   }));
+  if (!result.some(tag => tag.group === 'language')) {
+    const filename = String(book.filepath || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop().normalize('NFKC');
+    const chinese = /[\[【(]\s*(?:chinese|中文|简体中文|繁体中文|簡體中文|繁體中文|汉化|漢化|中国翻訳|中國翻譯)\s*[\]】)]/i;
+    if (chinese.test(filename)) result.push({ group:'language', value:'chinese', key:tagKey('language', 'chinese'), inferred:true });
+  }
+  return result;
 }
 function compareAuthors(a, b) {
   if (!a.length) return b.length ? 1 : 0;
@@ -26,19 +34,21 @@ function compareAuthors(a, b) {
   }
   return a.length - b.length;
 }
-export function readingStatus(book, progress) {
+export function readingStatus(book, progress, visits = {}) {
   const saved = progress[book.id];
   if (saved?.total > 0 && saved.page >= saved.total) return 'finished';
-  return saved || book.readCount > 0 ? 'reading' : 'unread';
+  return saved || visits[book.id] || book.readCount > 0 ? 'reading' : 'unread';
 }
+export const readingTime = (book, progress = {}, visits = {}) => Math.max(progress[book.id]?.time || 0, visits[book.id]?.time || 0);
 export class LibraryIndex {
-  constructor(books = [], collections = []) {
+  constructor(books = [], collections = [], library = '') {
     this.books = books.filter(book => !book.hiddenBook);
     this.metadata = new Map();
     this.tags = new Map();
     this.orders = new Map();
     this.collections = new Map();
     const references = new Map();
+    const root = typeof library === 'string' && library ? library.replaceAll('\\', '/').replace(/\/+$/, '') + '/' : '';
     for (const book of this.books) {
       for (const reference of [book.id, book.hash].filter(Boolean)) {
         if (!references.has(reference)) references.set(reference, new Set());
@@ -53,11 +63,13 @@ export class LibraryIndex {
     }
     for (const book of this.books) {
       const tags = bookTags(book);
+      const file = typeof book.filepath === 'string' ? book.filepath.replaceAll('\\', '/') : '';
       // Canonicalize coauthors once so tag order and duplicate spellings do not affect sorting.
       const authors = tags.filter(tag => tag.group === 'artist').map(tag => tag.value).sort(collator.compare)
         .filter((name, i, names) => !i || collator.compare(name, names[i - 1]) !== 0);
       this.metadata.set(book.id, {
         tags, authors, keys: new Set(tags.map(tag => tag.key)),
+        relativePath: root && file.startsWith(root) ? file.slice(root.length) : '',
         search: [bookTitle(book), book.title, book.category, ...tags.map(tag => tag.value)].join(' ').toLocaleLowerCase(),
       });
       for (const tag of tags) {
@@ -82,35 +94,39 @@ export class LibraryIndex {
     }
     return this.orders.get(sort);
   }
-  select({ search = '', selectedTags = [], excludedTags = [], collectionId = '', favorites = false, filter = 'all', sort = 'recent', progress = {}, bookIds = null }) {
+  select({ search = '', folder = '', classicQuery = '', selectedTags = [], excludedTags = [], collectionId = '', favorites = false, filter = 'all', sort = 'recent', progress = {}, visits = {}, bookIds = null }) {
     const words = search.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
     const collection = collectionId ? this.collections.get(collectionId) : null;
+    const classicMatch = compileClassicQuery(classicQuery);
+    const folderPrefix = folder && folder + '/';
     let books = this.ordered(sort).filter(book => {
       const metadata = this.metadata.get(book.id);
-      return (!favorites || book.mark) && (filter === 'all' || readingStatus(book, progress) === filter)
+      return (!favorites || book.mark) && (filter === 'all' || readingStatus(book, progress, visits) === filter)
         && (!bookIds || bookIds.has(book.id))
+        && (!folderPrefix || metadata.relativePath.startsWith(folderPrefix))
+        && (!classicMatch || classicMatch(book, metadata))
         && (!collectionId || collection?.ids.has(book.id))
         && selectedTags.every(key => metadata.keys.has(key)) && excludedTags.every(key => !metadata.keys.has(key))
         && words.every(word => metadata.search.includes(word));
     });
-    if (filter === 'reading' && sort === 'recent') books = books.sort((a, b) => (progress[b.id]?.time || 0) - (progress[a.id]?.time || 0));
+    if (filter === 'reading' && sort === 'recent') books = books.sort((a, b) => readingTime(b, progress, visits) - readingTime(a, progress, visits));
     return books;
   }
   // One metadata scan supplies both the visible list and all sidebar counts.
   // Counts deliberately ignore their own toggle, preserving combined filters.
   summarize(state) {
-    const { favorites = false, filter = 'all', sort = 'recent', progress = {} } = state;
+    const { favorites = false, filter = 'all', sort = 'recent', progress = {}, visits = {} } = state;
     const scoped = this.select({ ...state, favorites: false, filter: 'all' });
     const counts = { reading: 0, finished: 0, unread: 0 }, books = [];
     let favoriteCount = 0;
     for (const book of scoped) {
-      const status = readingStatus(book, progress), matches = filter === 'all' || filter === status;
+      const status = readingStatus(book, progress, visits), matches = filter === 'all' || filter === status;
       if (book.mark && matches) favoriteCount++;
       if (favorites && !book.mark) continue;
       counts[status]++;
       if (matches) books.push(book);
     }
-    if (filter === 'reading' && sort === 'recent') books.sort((a, b) => (progress[b.id]?.time || 0) - (progress[a.id]?.time || 0));
+    if (filter === 'reading' && sort === 'recent') books.sort((a, b) => readingTime(b, progress, visits) - readingTime(a, progress, visits));
     return { books, counts, favoriteCount };
   }
 }

@@ -9,6 +9,44 @@ const { sourceSignature, checkCancelled } = require('./source_signature')
 const plain = book => typeof book.toJSON === 'function' ? book.toJSON() : book
 const aborted = error => error?.name === 'AbortError' || error?.code === 'ABORT_ERR'
 const mergeRelation = (sources, id) => Object.hasOwn(sources, id) ? JSON.stringify(sources[id]) : ''
+const managedCoverPath = (coverRoot, filepath) => filepath ? path.join(coverRoot, path.basename(filepath)) : filepath
+
+// New hand-picked covers carry a filename marker that survives backup path
+// rebasing. Older generated covers are WebP and store the hash of the source
+// page. The old picker kept the input extension and hashed the managed copy.
+async function coverForRefresh(previous, generated, coverRoot) {
+  if (previous?.coverPath) {
+    const basename = path.basename(previous.coverPath)
+    const coverPath = managedCoverPath(coverRoot, previous.coverPath)
+    try {
+      if ((await fs.promises.lstat(coverPath)).isFile() &&
+          (basename.startsWith('custom-') || path.extname(basename).toLowerCase() !== '.webp' ||
+          (/^[a-f0-9]{40}$/i.test(previous.coverHash) && await hashFile(coverPath) === previous.coverHash))) {
+        await assertWithin(coverRoot, coverPath)
+        return { coverPath, coverHash: previous.coverHash }
+      }
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error
+    }
+  }
+  return { coverPath: generated.coverPath, coverHash: generated.coverHash }
+}
+
+async function undiscoveredSource(filepath, library) {
+  if (typeof filepath !== 'string' || !path.isAbsolute(filepath)) return ['invalid', '书籍路径无效，请重新定位原文件']
+  if (!isWithin(library, filepath, true)) return ['outside-library', '书籍路径不在当前书库目录中，请核对书库设置或重新定位']
+  if (await confirmedMissing(filepath, library)) return ['missing', '书籍文件或文件夹已缺失，可以重新定位原文件']
+  try {
+    await assertWithin(library, filepath, true)
+    const stat = await fs.promises.lstat(filepath)
+    if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) return ['invalid', '书籍路径的类型无效，请重新定位原文件']
+    if (stat.isDirectory()) await fs.promises.readdir(filepath)
+    else await fs.promises.access(filepath, fs.constants.R_OK)
+  } catch {
+    return ['unavailable', '书籍路径暂不可访问，请检查磁盘连接和访问权限后重试']
+  }
+  return ['not-discovered', '此路径未被识别为书籍，请检查目录中的图片或压缩包格式']
+}
 
 // Expensive discovery, hashing and cover generation happen outside the short
 // write queue. The final transaction merges the latest user fields, so reading,
@@ -16,38 +54,60 @@ const mergeRelation = (sources, id) => Object.hasOwn(sources, id) ? JSON.stringi
 async function scanLibrary({ Manga, library, excludeFile, excludeRoots = [], coverRoot, getBookFilelist, geneCover,
   clearTemp = async () => {}, progress = () => {}, message = () => {}, onItem = () => {}, onError = () => {}, newId,
   fingerprint = fingerprintBook, signature = sourceSignature, sampleHash = hashFile, rebuild = false,
-  forceRefresh = false, paths = null, signal, commit = operation => operation(), beforeCommit = () => {},
-  getMergedSources = async () => ({}) }) {
-  if (!library) throw new Error('请先选择书库目录')
+  forceRefresh = false, bookIds = null, signal, commit = operation => operation(), beforeCommit = () => {},
+  getMergedSources = async () => ({}), onFirstBookReady }) {
+  if (!library && !bookIds) throw new Error('请先选择书库目录')
   checkCancelled(signal)
   const { previousBooks, mergedSources } = await commit(async () => ({
     previousBooks: (await Manga.findAll()).map(plain), mergedSources: await getMergedSources()
   }))
-  await fs.promises.readdir(library) // An unavailable drive is never an empty library.
-  onItem({ phase: 'discover', current: 0, total: 0, message: '正在查找书籍文件…' })
-  let files = await getBookFilelist(library, { signal })
-  checkCancelled(signal)
-  files = files.filter(file => !excludeRoots.some(root => root && isWithin(root, file.filepath, true)))
+  const result = { changed: false, count: previousBooks.length, failures: 0, errors: [], processed: 0,
+    added: 0, updated: 0, unchanged: 0, relocated: 0, cancelled: false }
+  const selectedIds = bookIds && new Set(bookIds)
+  const selectedBooks = selectedIds && new Map(previousBooks.filter(book => selectedIds.has(book.id)).map(book => [book.id, book]))
+  const selectedPaths = selectedBooks && new Map([...selectedBooks.values()].filter(book => book.filepath).map(book => [pathKey(book.filepath), book.id]))
+  const outcomes = new Map()
+  const done = (bookId, status, message) => {
+    if (selectedIds?.has(bookId)) outcomes.set(bookId, { bookId, status, ...(message && { message }) })
+  }
+  const fail = (filepath, error, phase = 'book', bookId, status = 'failed') => {
+    const failure = { filepath, message: error.message || String(error), phase, ...(bookId && { bookId }) }
+    done(bookId, status, failure.message)
+    result.failures++
+    result.errors.push(failure)
+    onError(failure)
+    message(`未能处理书籍：${filepath || bookId}；${failure.message}`)
+  }
+  const finish = () => selectedIds ? { ...result, bookResults: [...outcomes.values()] } : result
+  if (selectedIds) for (const id of selectedIds) {
+    if (!selectedBooks.has(id)) fail('', '书籍记录不存在', 'discover', id, 'removed')
+  }
+  if (selectedBooks && !selectedBooks.size) return finish()
+  try {
+    if (!library) throw new Error('请先选择书库目录')
+    await fs.promises.readdir(library) // An unavailable drive is never an empty library.
+  } catch (error) {
+    if (!selectedBooks) throw error
+    for (const { id, filepath } of selectedBooks.values()) {
+      fail(filepath, library ? '书库目录暂不可访问，请检查磁盘连接和访问权限后重试' : error, 'discover', id, 'unavailable')
+    }
+    return finish()
+  }
   let excluded
   if (excludeFile) {
     try { excluded = new RegExp(excludeFile) }
     catch { throw new Error('书库排除规则不是有效的正则表达式，原书库保持不变') }
-    files = files.filter(file => !excluded.test(file.filepath))
   }
-  files = [...new Map(files.map(file => [pathKey(file.filepath), file])).values()]
-  const selectedPaths = paths ? new Set(paths.map(pathKey)) : null
+  const protectedPath = filepath => excludeRoots.some(root => root && isWithin(root, filepath, true))
+  const excludedByRule = filepath => typeof filepath === 'string' && excluded?.test(filepath)
+  const excludePath = filepath => protectedPath(filepath) || excludedByRule(filepath)
+  onItem({ phase: 'discover', current: 0, total: 0, message: '正在查找书籍文件…' })
+  const discovered = await getBookFilelist(library, { signal })
+  checkCancelled(signal)
+  let files = [...new Map(discovered.filter(file => !excludePath(file.filepath)).map(file => [pathKey(file.filepath), file])).values()]
   if (selectedPaths) files = files.filter(file => selectedPaths.has(pathKey(file.filepath)))
   message(`正在${rebuild ? '重建' : forceRefresh ? '刷新本地元数据' : '扫描'}书库，共 ${files.length} 本`)
-  const result = { changed: false, count: previousBooks.length, failures: 0, errors: [], processed: 0,
-    added: 0, updated: 0, unchanged: 0, relocated: 0, cancelled: false }
-  const fail = (filepath, error, phase = 'book') => {
-    const failure = { filepath, message: error.message || String(error), phase }
-    result.failures++
-    result.errors.push(failure)
-    onError(failure)
-    message(`书籍处理失败，原记录已保留：${filepath}；${failure.message}`)
-  }
-  if (!files.length) {
+  if (!files.length && !selectedIds) {
     message('本次未发现书籍，将保留全部旧记录和封面，并检查已确认失联的路径')
   }
   const resolver = createIdentityResolver(previousBooks, files, { libraryRoot: library, mergedSources })
@@ -56,82 +116,13 @@ async function scanLibrary({ Manga, library, excludeFile, excludeRoots = [], cov
   const retainedCovers = new Set()
   const supersededCovers = []
   let committed = false
+  let publishedCount = 0
   const removeCover = async cover => {
     try { await assertWithin(coverRoot, cover); await fs.promises.unlink(cover) }
     catch (error) { if (error.code !== 'ENOENT') message('部分临时封面暂未清理，书库数据保持可用') }
   }
-  try {
-    await clearTemp()
-    for (let index = 0; index < files.length; index++) {
-      if (signal?.aborted) { result.cancelled = true; break }
-      const { filepath, type } = files[index]
-      onItem({ phase: 'inspect', current: index, total: files.length, filepath,
-        message: `检查 ${index + 1} / ${files.length}：${path.basename(filepath)}` })
-      try {
-        await assertWithin(library, filepath, type === 'folder')
-        const observed = await signature(filepath, type, { libraryRoot: library, signal })
-        const atPath = resolver.atPath(filepath)
-        let previous = atPath
-        const contentChanged = !previous?.sourceSignature || observed !== previous.sourceSignature
-        const identityFingerprint = !previous?.identityFingerprint || rebuild || contentChanged
-          ? await fingerprint(filepath, type, { libraryRoot: library, signal }) : previous.identityFingerprint
-        checkCancelled(signal)
-        if (!previous) previous = await resolver.relocated(filepath, type, identityFingerprint)
-        const relocated = !!previous && !atPath
-        let coverExists = false
-        if (previous?.coverPath) {
-          try { await fs.promises.access(path.join(coverRoot, path.basename(previous.coverPath))); coverExists = true } catch {}
-        }
-        let candidate
-        const needsRefresh = rebuild || forceRefresh || !previous || contentChanged || !coverExists
-        if (needsRefresh) {
-          onItem({ phase: 'cover', current: index, total: files.length, filepath,
-            message: `更新页数与封面：${path.basename(filepath)}` })
-          const generated = await geneCover(filepath, type, { signal })
-          if (generated.coverPath) generatedCovers.add(generated.coverPath)
-          if (!generated.targetFilePath || !generated.coverPath) throw new Error('没有生成有效封面')
-          const sample = await sampleHash(generated.targetFilePath)
-          checkCancelled(signal)
-          const after = await signature(filepath, type, { libraryRoot: library, signal })
-          if (after !== observed) throw new Error('文件在扫描过程中发生变化，请稍后重试')
-          candidate = mergeRebuiltBook(previous, {
-            id: previous?.id || newId(), title: path.basename(filepath), filepath, type,
-            coverPath: generated.coverPath, hash: sample, identityFingerprint, sourceSignature: observed,
-            pageCount: generated.pageCount, bundleSize: generated.bundleSize,
-            mtime: generated.mtime.toJSON(), coverHash: generated.coverHash,
-            status: 'non-tag', exist: true, date: Date.now()
-          })
-        } else {
-          candidate = { ...previous, filepath, type, identityFingerprint, sourceSignature: observed, exist: true,
-            coverPath: previous.coverPath ? path.join(coverRoot, path.basename(previous.coverPath)) : previous.coverPath }
-        }
-        if (previous) resolver.claim(previous)
-        const changed = !previous || needsRefresh || relocated || previous.exist === false || previous.exist === 0 ||
-          previous.coverPath !== candidate.coverPath
-        prepared.set(candidate.id, { candidate, previous, changed, relocated, refreshed: needsRefresh })
-      } catch (error) {
-        if (aborted(error) || signal?.aborted) { result.cancelled = true; break }
-        fail(filepath, error)
-      }
-      result.processed = index + 1
-      progress((index + 1) / files.length)
-      onItem({ current: index + 1, total: files.length })
-      if ((index + 1) % 50 === 0) await clearTemp()
-    }
-    if (rebuild && (result.failures || result.cancelled)) {
-      message('重建未提交，全部旧书目和用户数据保持不变')
-      return result
-    }
-    // A cancelled incremental scan keeps successfully prepared books; retrying
-    // then skips them. Never mark unvisited records missing after cancellation.
-    const missing = []
-    if (!result.cancelled && !selectedPaths) {
-      for (const previous of previousBooks) {
-        if (excluded?.test(previous.filepath) || excludeRoots.some(root => root && isWithin(root, previous.filepath, true))) continue
-        if (!mergedSources[previous.id] && !resolver.isClaimed(previous.id) && await confirmedMissing(previous.filepath, library)) missing.push(previous)
-      }
-    }
-    onItem({ phase: 'save', message: result.cancelled ? '正在保存已完成的书目…' : '正在保存书库变化…' })
+  async function commitPrepared(missing) {
+    const previouslyAdded = result.added
     await commit(async () => {
       await beforeCommit()
       if (rebuild) checkCancelled(signal)
@@ -161,11 +152,13 @@ async function scanLibrary({ Manga, library, excludeFile, excludeRoots = [], cov
           if (changed && await signature(candidate.filepath, candidate.type, { libraryRoot: library, signal: rebuild ? signal : undefined }) !== candidate.sourceSignature) {
             throw new Error('保存前发现书籍文件发生变化，请重试')
           }
-          accepted.push({ ...entry, latest, book: latest ? mergeRebuiltBook(latest, candidate) : candidate })
+          const cover = entry.refreshed ? await coverForRefresh(latest, candidate, coverRoot)
+            : { coverPath: managedCoverPath(coverRoot, latest.coverPath) }
+          accepted.push({ ...entry, latest, book: mergeRebuiltBook(latest, { ...candidate, ...cover }) })
           if (latest) latestResolver.claim(latest)
         } catch (error) {
           if (rebuild) throw error
-          fail(candidate.filepath, error, 'commit')
+          fail(candidate.filepath, error, 'commit', candidate.id)
         }
       }
       await Manga.sequelize.transaction(async transaction => {
@@ -191,19 +184,124 @@ async function scanLibrary({ Manga, library, excludeFile, excludeRoots = [], cov
         }
         if (rebuild) checkCancelled(signal)
       })
-      result.count = latestBooks.length + result.added
-      committed = true
+      for (const entry of accepted) done(entry.book.id, 'refreshed')
+      result.count = latestBooks.length + result.added - previouslyAdded
     })
+    prepared.clear()
+  }
+  // Publish just the first usable row on initial import. All remaining rows
+  // share the usual final transaction, keeping full-library reloads bounded.
+  const publishFirst = onFirstBookReady && !previousBooks.length && !rebuild && !forceRefresh && !selectedIds && files.length > 1
+  try {
+    await clearTemp()
+    for (let index = 0; index < files.length; index++) {
+      if (signal?.aborted) { result.cancelled = true; break }
+      const { filepath, type } = files[index]
+      let requestedId = selectedPaths?.get(pathKey(filepath))
+      onItem({ phase: 'inspect', current: index, total: files.length, filepath,
+        message: `检查 ${index + 1} / ${files.length}：${path.basename(filepath)}` })
+      try {
+        await assertWithin(library, filepath, type === 'folder')
+        const observed = await signature(filepath, type, { libraryRoot: library, signal })
+        const atPath = resolver.atPath(filepath)
+        let previous = atPath
+        const contentChanged = !previous?.sourceSignature || observed !== previous.sourceSignature
+        const identityFingerprint = !previous?.identityFingerprint || rebuild || contentChanged
+          ? await fingerprint(filepath, type, { libraryRoot: library, signal }) : previous.identityFingerprint
+        checkCancelled(signal)
+        if (selectedIds) {
+          if (!selectedIds.has(atPath?.id)) throw new Error('此路径归属另一条书目，请在书库中核对合并关系')
+          requestedId = atPath.id
+        } else if (!previous) previous = await resolver.relocated(filepath, type, identityFingerprint)
+        const relocated = !!previous && !atPath
+        let coverExists = false
+        if (previous?.coverPath) {
+          try { await fs.promises.access(path.join(coverRoot, path.basename(previous.coverPath))); coverExists = true } catch {}
+        }
+        let candidate
+        const needsRefresh = rebuild || forceRefresh || !previous || contentChanged || !coverExists
+        if (needsRefresh) {
+          onItem({ phase: 'cover', current: index, total: files.length, filepath,
+            message: `更新页数与封面：${path.basename(filepath)}` })
+          const generated = await geneCover(filepath, type, { signal })
+          if (generated.coverPath) generatedCovers.add(generated.coverPath)
+          if (!generated.targetFilePath || !generated.coverPath) throw new Error('没有生成有效封面')
+          const sample = await sampleHash(generated.targetFilePath)
+          checkCancelled(signal)
+          const after = await signature(filepath, type, { libraryRoot: library, signal })
+          if (after !== observed) throw new Error('文件在扫描过程中发生变化，请稍后重试')
+          candidate = {
+            id: previous?.id || newId(), title: path.basename(filepath), filepath, type,
+            coverPath: generated.coverPath, hash: sample, identityFingerprint, sourceSignature: observed,
+            pageCount: generated.pageCount, bundleSize: generated.bundleSize,
+            mtime: generated.mtime.toJSON(), coverHash: generated.coverHash,
+            status: 'non-tag', exist: true, date: Date.now()
+          }
+        } else {
+          candidate = { id: previous.id, filepath, type, identityFingerprint, sourceSignature: observed, exist: true,
+            coverPath: managedCoverPath(coverRoot, previous.coverPath) }
+        }
+        if (previous) resolver.claim(previous)
+        const changed = !previous || needsRefresh || relocated || previous.exist === false || previous.exist === 0 ||
+          previous.coverPath !== candidate.coverPath
+        prepared.set(candidate.id, { candidate, previous, changed, relocated, refreshed: needsRefresh })
+      } catch (error) {
+        if (aborted(error) || signal?.aborted) { result.cancelled = true; break }
+        if (selectedIds && ['ENOENT', 'EACCES', 'EPERM', 'ENOTDIR', 'EIO'].includes(error.code)) {
+          const [status, detail] = await undiscoveredSource(filepath, library)
+          fail(filepath, status === 'not-discovered' ? error : detail, 'book', requestedId, status === 'not-discovered' ? 'failed' : status)
+        } else fail(filepath, error, 'book', requestedId)
+      }
+      if (publishFirst && !result.added && prepared.size) {
+        await commitPrepared([])
+        if (result.added) {
+          publishedCount = result.added
+          for (const cover of retainedCovers) generatedCovers.delete(cover)
+          await onFirstBookReady()
+        }
+      }
+      result.processed = index + 1
+      progress((index + 1) / files.length)
+      onItem({ current: index + 1, total: files.length })
+      if ((index + 1) % 50 === 0) await clearTemp()
+    }
+    if (rebuild && (result.failures || result.cancelled)) {
+      message('重建未提交，全部旧书目和用户数据保持不变')
+      return result
+    }
+    // A cancelled incremental scan keeps successfully prepared books; retrying
+    // then skips them. Never mark unvisited records missing after cancellation.
+    const missing = []
+    if (!result.cancelled && !selectedPaths) {
+      for (const previous of previousBooks) {
+        if (excludePath(previous.filepath)) continue
+        if (!mergedSources[previous.id] && !resolver.isClaimed(previous.id) && await confirmedMissing(previous.filepath, library)) missing.push(previous)
+      }
+    }
+    onItem({ phase: 'save', message: result.cancelled ? '正在保存已完成的书目…' : '正在保存书库变化…' })
+    await commitPrepared(missing)
+    committed = true
+    if (selectedBooks && !result.cancelled) {
+      const visitedPaths = new Set(files.map(file => pathKey(file.filepath)))
+      for (const { id, filepath } of selectedBooks.values()) {
+        if (outcomes.has(id)) continue
+        const [status, detail] = protectedPath(filepath) ? ['protected', '书籍位于程序的受保护目录中，请将文件移到书库中的其他位置']
+          : excludedByRule(filepath) ? ['excluded', '书籍被扫描排除规则排除，可以在设置中调整规则']
+          : filepath && visitedPaths.has(pathKey(filepath)) ? ['failed', '此路径归属另一条书目，请在书库中核对合并关系']
+          : await undiscoveredSource(filepath, library)
+        fail(filepath, detail, 'discover', id, status)
+      }
+    }
     // Other rows can share a legacy cover. Delete only after checking the
     // committed library, never while a replacement is still staged.
     const committedCovers = new Set((await commit(async () => (await Manga.findAll({ attributes: ['coverPath'], raw: true }))))
       .map(book => book.coverPath).filter(Boolean).map(pathKey))
     for (const cover of supersededCovers) if (!committedCovers.has(pathKey(cover))) await removeCover(cover)
-    return result
+    return finish()
   } catch (error) {
     if (aborted(error) && !committed) {
-      return { ...result, changed: false, count: previousBooks.length, cancelled: true,
-        added: 0, updated: 0, unchanged: 0, relocated: 0 }
+      return { ...result, changed: publishedCount > 0, count: previousBooks.length + publishedCount, cancelled: true,
+        added: publishedCount, updated: 0, unchanged: 0, relocated: 0 }
     }
     throw error
   } finally {
@@ -231,7 +329,7 @@ async function relocateMissingBook({ Manga, bookId, filepath, library, coverRoot
   const identityFingerprint = await fingerprint(filepath, previous.type, { libraryRoot: library, signal })
   if (identityFingerprint !== previous.identityFingerprint) throw new Error('选择的文件与原书内容不一致，已保留原书目和阅读档案')
   const generated = await geneCover(filepath, previous.type, { signal })
-  let saved = false
+  let retainedCover
   try {
     checkCancelled(signal)
     const hash = await sampleHash(generated.targetFilePath)
@@ -244,18 +342,18 @@ async function relocateMissingBook({ Manga, bookId, filepath, library, coverRoot
       if (all.some(book => book.id !== bookId && pathKey(book.filepath) === pathKey(filepath))) throw new Error('选择的路径已有独立书目，未合并两个阅读档案')
       if (await signature(filepath, latest.type, { libraryRoot: library, signal }) !== observed) throw new Error('选择的文件正在变化，请稍后重试')
       const book = mergeRebuiltBook(latest, { filepath, type: latest.type, identityFingerprint,
-        sourceSignature: observed, coverPath: generated.coverPath, hash, coverHash: generated.coverHash,
+        sourceSignature: observed, ...await coverForRefresh(latest, generated, coverRoot), hash,
         pageCount: generated.pageCount, bundleSize: generated.bundleSize, mtime: generated.mtime.toJSON(), exist: true })
       await Manga.update(book, { where: { id: book.id } })
-      saved = true
+      retainedCover = book.coverPath
       return book
     })
     return result
   } finally {
-    if (!saved && generated.coverPath) {
+    if (generated.coverPath && retainedCover !== generated.coverPath) {
       try { await assertWithin(coverRoot, generated.coverPath); await fs.promises.unlink(generated.coverPath) } catch {}
     }
   }
 }
 
-module.exports = { scanLibrary, relocateMissingBook }
+module.exports = { scanLibrary, relocateMissingBook, coverForRefresh }

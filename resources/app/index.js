@@ -4,19 +4,22 @@ const fs = require('fs')
 const { brotliDecompress } = require('zlib')
 const { promisify, format } = require('util')
 const _ = require('lodash')
+const { folderTree } = require('./modules/folder_tree')
 const { nanoid } = require('nanoid')
 const sharp = require('sharp')
 const { execFile } = require('child_process')
 const { pathToFileURL } = require('url')
 const { isWithin, assertWithin, webURL, readerExecutable, hashFile, serialQueue } = require('./modules/safety')
-const { createReadingStateStore, validBookId } = require('./modules/reading_state')
-const { scanLibrary, relocateMissingBook } = require('./modules/library_scan')
+const { createReadingStateStore, validBookId, writeAtomic } = require('./modules/reading_state')
+const { scanLibrary, relocateMissingBook, coverForRefresh } = require('./modules/library_scan')
 const { TaskService } = require('./modules/task_service')
 const { createLibraryOrganizer } = require('./modules/library_organizer')
 const { createLocalSearchService } = require('./modules/local_search')
-const { mergeBookEdits } = require('./modules/library_edits')
+const { mergeBookEdits, withBookAuthors, writeBookEdit } = require('./modules/library_edits')
+const { validateCollections, createCollectionService } = require('./modules/collections')
+const { createBookFileService } = require('./modules/book_files')
 const { createShutdownGuard } = require('./modules/shutdown_guard')
-const { moveWithIdentity, fingerprintBook } = require('./modules/library_identity')
+const { moveWithIdentity, fingerprintBook, pathKey } = require('./modules/library_identity')
 const { createHash } = require('crypto')
 const { BackupService } = require('./modules/backup_service')
 const { readClientState, writeClientState } = require('./modules/client_state')
@@ -25,8 +28,7 @@ const { listArchiveRecoveryPoints, restoreArchiveRecoveryPoint } = require('./mo
 const sqlite3 = require('sqlite3')
 const { open } = require('sqlite')
 const { importSqliteMetadata } = require('./modules/sqlite_metadata_import')
-const fetch = require('node-fetch')
-const { HttpsProxyAgent } = require('https-proxy-agent')
+const { requestSource, createMetadataSources, validateSourceSettings, SOURCE_TYPES, galleryURL } = require('./modules/metadata_sources')
 const windowStateKeeper = require('electron-window-state')
 const express = require('express')
 const { glob } = require('glob')
@@ -144,17 +146,21 @@ let readerExtractionTaskId = null
 const readerQueue = serialQueue()
 const libraryQueue = serialQueue()
 const settingsQueue = serialQueue()
-let libraryOrganizer, localSearch
+let libraryOrganizer, localSearch, metadataSources, collectionService, bookFiles
 const taskService = new TaskService({ storePath: STORE_PATH, onChange: tasks => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tasks-changed', { tasks })
 } })
 const libraryChannels = new Set(['load-book-list', 'force-gene-book-list', 'patch-local-metadata', 'patch-local-metadata-by-book', 'delete-local-book', 'move-local-book', 'delete-image', 'save-book', 'import-sqlite', 'import-database', 'export-database', 'save-setting'])
-for (const channel of ['load-reading-state', 'save-reading-progress', 'save-reading-preferences', 'migrate-reading-state']) libraryChannels.add(channel)
+for (const channel of ['load-reading-state', 'save-reading-progress', 'save-reading-preferences', 'save-reading-visit', 'migrate-reading-state']) libraryChannels.add(channel)
+libraryChannels.add('metadata-source-save-settings')
+libraryChannels.add('collection-command')
+libraryChannels.add('open-local-book')
 for (const channel of ['load-ui-state', 'save-ui-state', 'backup-export', 'backup-inspect', 'backup-restore',
   'archive-recovery-list', 'archive-recovery-restore', 'save-collection-list']) libraryChannels.add(channel)
 // Long tasks prepare outside this queue and take it only for their commits.
 for (const channel of ['load-book-list', 'force-gene-book-list', 'patch-local-metadata', 'patch-local-metadata-by-book']) libraryChannels.delete(channel)
 libraryChannels.add('image-cache-budget')
+libraryChannels.add('save-library-exclusion')
 libraryChannels.add('local-search-command')
 const recoveryChannels = new Set(['load-ui-state', 'save-ui-state', 'backup-inspect', 'backup-restore',
   'import-database', 'data-protection-open-recovery', 'window-close', 'window-minimize', 'window-toggle-maximize', 'window-is-maximized'])
@@ -226,7 +232,7 @@ const openRandomLocalBook = async () => {
   return libraryQueue(async () => {
     if (isQuitting) return
     const books = (await Manga.findAll({
-      attributes: ['filepath', 'hiddenBook', 'exist'],
+      attributes: ['id', 'filepath', 'hiddenBook', 'exist'],
       raw: true
     })).filter(book => !book.hiddenBook && book.exist !== false && book.exist !== 0 &&
       typeof book.filepath === 'string' && book.filepath.trim())
@@ -241,7 +247,7 @@ const openRandomLocalBook = async () => {
       // A same-name file in the selected root may be a different book.
       try { await fs.promises.access(book.filepath) } catch { continue }
       if (isQuitting) return
-      await openLocalBook(book.filepath)
+      await openLocalBook(book.filepath, book, true)
       return
     }
     throw new Error('书库中没有可打开的漫画，请先添加漫画或检查漫画文件是否存在。')
@@ -512,7 +518,7 @@ const saveBookListToDatabase = async (data) => {
   })
 }
 
-const saveBookToDatabase = async (book) => {
+const saveBookToDatabase = async (book, authors) => {
   if (!book || !validBookId(book.id)) throw new Error('书籍 ID 无效')
   const stored = await Manga.findByPk(book.id)
   if (!stored) throw new Error('书籍记录不存在，保存未执行')
@@ -520,9 +526,8 @@ const saveBookToDatabase = async (book) => {
   const approvedCover = pendingCustomCovers.get(book.coverPath)
   const cover = approvedCover && approvedCover.expires > Date.now() ? approvedCover : null
   if (cover) await assertWithin(COVER_PATH, cover.coverPath)
-  const saved = mergeBookEdits(previous, book, cover)
-  await Manga.update(saved, { where: { id: saved.id } })
-  await Metadata.upsert(saved)
+  const merged = mergeBookEdits(previous, book, cover)
+  const saved = await writeBookEdit(Manga, Metadata, authors === undefined ? merged : withBookAuthors(merged, authors))
   if (cover) pendingCustomCovers.delete(cover.coverPath)
   console.log(`Saved ${saved.title}`)
   return saved
@@ -570,6 +575,111 @@ libraryOrganizer = createLibraryOrganizer({
   onChanged: () => notifyLibraryUpdated(null, 'organizer'),
 })
 localSearch = createLocalSearchService({ storePath: STORE_PATH, getBooks: loadBookListFromDatabase })
+metadataSources = createMetadataSources({ getBook: async id => (await Manga.findByPk(id))?.toJSON(), getSettings: () => setting,
+  saveBook: saveBookToDatabase, commit: commitLibraryTask })
+collectionService = createCollectionService({ getCollections: () => collectionList, getBooks: () => Manga.findAll({ raw: true }),
+  saveCollections: async list => {
+    await writeAtomic(path.join(STORE_PATH, 'collectionList.json'), list)
+    collectionList = list
+  } })
+bookFiles = createBookFileService({ getBook:async id => {
+    const book = await Manga.findByPk(id, { raw:true })
+    if (book) {
+      const records = await Manga.findAll({ attributes:['id','filepath'], raw:true })
+      if (records.filter(row => typeof row.filepath === 'string' && pathKey(row.filepath) === pathKey(book.filepath)).length !== 1) throw new Error('多个书库记录指向同一来源，请先核对重复记录或撤销相关合并')
+    }
+    return book
+  }, getLibrary:() => setting.library,
+  saveLocation:async (id, patch) => { const [count] = await Manga.update(patch, { where:{id} }); if (count !== 1) throw new Error('书库记录未能更新') },
+  trash:filename => shell.trashItem(filename), listImages:directory => glob('*.@(jpg|jpeg|png|webp|avif|gif)', { cwd:directory, nocase:true, absolute:true, nodir:true, follow:false }),
+  commit:commitLibraryTask })
+ipcMain.handle('book-file-preview-move', async (_event, id) => {
+  const selected = await dialog.showOpenDialog(mainWindow, { title:'选择书库内的目标文件夹', defaultPath:setting.library, properties:['openDirectory'] })
+  if (selected.canceled || !selected.filePaths?.[0]) return { canceled:true }
+  return bookFiles.previewMove(id, selected.filePaths[0])
+})
+ipcMain.handle('book-file-preview-recycle', (_event, id) => bookFiles.previewRecycle(id))
+ipcMain.handle('book-file-apply', async (_event, token) => {
+  const result = await bookFiles.apply(token)
+  notifyLibraryUpdated(null, 'book-files')
+  return result
+})
+ipcMain.handle('collection-command', async (_event, params) => {
+  const result = await collectionService.command(params)
+  if (result.changed) notifyLibraryUpdated(null, 'collections')
+  return result
+})
+
+taskService.register('metadata-search', (params, task) => {
+  task.report({ message: '正在搜索元数据来源…' })
+  return metadataSources.search(params, { signal: task.signal })
+}, { lane: 'metadata-online', title: '搜索在线元数据' })
+taskService.register('metadata-fetch', async (params, task) => {
+  task.report({ message: '正在拉取元数据预览…' })
+  return metadataSources.preview(params, { signal: task.signal })
+}, { lane: 'metadata-online', title: '拉取在线元数据预览' })
+taskService.register('metadata-batch', async (params, task) => {
+  const books = await commitLibraryTask(() => Manga.findAll({ attributes:['id', 'filepath', 'hiddenBook', 'status'], raw:true, order:[['id','ASC']] }))
+  const result = await metadataSources.batch({ ...params, books }, task)
+  if (result.changed) notifyLibraryUpdated(task.id, 'online-metadata')
+  return result
+}, { lane:'metadata-online', title:params => params.scope === 'all' ? '全书库拉取在线元数据' : '拉取未标记书籍的元数据' })
+taskService.register('sqlite-import', (params, task) => commitLibraryTask(async () => {
+  const books = await Manga.findAll({ raw:true })
+  const ids = params.bookIds ? new Set(params.bookIds) : null
+  const selected = books.filter(book => !book.hiddenBook && (!ids || ids.has(book.id)))
+  task.report({ total:selected.length, message:'正在匹配 SQLite 元数据…' })
+  const result = await importSqliteMetadata({ filename:params.filename, books:selected, Manga, Metadata,
+    getEhviewerData:getEhviewerDataManually, signal:task.signal,
+    onProgress:value => { if (value >= 0) task.report({ current:Math.floor(value * selected.length) }) } })
+  for (const failure of result.failures) task.error({ bookId:failure.id, message:failure.reason, phase:'import' })
+  if (result.counts.imported) notifyLibraryUpdated(task.id, 'sqlite-import')
+  return { ...result, ...result.counts, failureDetails:result.failures, failures:result.counts.failed,
+    changed:result.counts.imported>0, cancelled:result.canceled }
+}), { lane:'library', title:'导入 SQLite 元数据' })
+ipcMain.handle('import-library-sqlite', async (_event, options = {}) => {
+  if (!options || typeof options !== 'object' || Array.isArray(options) || (options.bookIds !== undefined &&
+      (!Array.isArray(options.bookIds) || options.bookIds.length > 100000 || options.bookIds.some(id => !validBookId(id))))) throw new Error('导入书籍列表无效')
+  const selected = await dialog.showOpenDialog(mainWindow, { title:'选择 SQLite 元数据', properties:['openFile'], filters:[{name:'SQLite', extensions:['sqlite','db']}] })
+  if (selected.canceled || !selected.filePaths?.[0]) return { canceled:true }
+  const params = { filename:selected.filePaths[0], ...(options.bookIds ? {bookIds:[...new Set(options.bookIds)]} : {}) }
+  return taskService.run('sqlite-import', params, { key:'sqlite-import:' + JSON.stringify(params) })
+})
+function metadataTaskParams(value, preview = false) {
+  const keys = preview ? ['bookId','url'] : ['bookId','source','query']
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !validBookId(value.bookId) ||
+      Object.keys(value).some(key => !keys.includes(key))) throw new Error('元数据请求参数无效')
+  if (preview) return { bookId:value.bookId, url:galleryURL(value.url).url }
+  if (!SOURCE_TYPES.includes(value.source) || typeof value.query !== 'string' || value.query.length > 1000) throw new Error('元数据搜索参数无效')
+  return { bookId:value.bookId, source:value.source, query:value.query }
+}
+ipcMain.handle('metadata-source-search', (_event, value) => {
+  const params = metadataTaskParams(value)
+  return taskService.run('metadata-search', params, { key:'metadata-search:' + JSON.stringify(params) })
+})
+ipcMain.handle('metadata-source-preview', (_event, value) => {
+  const params = metadataTaskParams(value, true)
+  return taskService.run('metadata-fetch', params, { key:'metadata-fetch:' + JSON.stringify(params) })
+})
+ipcMain.handle('metadata-source-get-preview', (_event, token) => metadataSources.getPreview(token))
+ipcMain.handle('metadata-source-apply', async (_event, params) => {
+  const saved = await metadataSources.apply(params)
+  notifyLibraryUpdated(null, 'online-metadata')
+  return saved
+})
+ipcMain.handle('metadata-source-save-settings', async (_event, patch) => {
+  const previous = setting, next = validateSourceSettings(previous, patch)
+  const proxyOptions = value => value ? { mode: 'fixed_servers', proxyRules: value } : { mode: 'direct' }
+  try {
+    await session.defaultSession.setProxy(proxyOptions(next.proxy))
+    await writeAtomic(path.join(STORE_PATH, 'setting.json'), next)
+    setting = next
+    return setting
+  } catch (error) {
+    await session.defaultSession.setProxy(proxyOptions(previous.proxy)).catch(() => {})
+    throw error
+  }
+})
 
 // The organizer takes the shared commit queue itself. Putting these channels
 // into libraryChannels as well would deadlock preview, apply and undo.
@@ -601,12 +711,6 @@ async function runLibraryScan(params, task) {
   const clearTemp = () => clearFolder(tempRoot)
   const taskCover = (filepath, type, options) => geneCover(filepath, type, { ...options, tempRoot,
     onProgress: step => task.report({ message: step.message || '正在读取压缩包封面…', filepath }) })
-  let paths = null
-  if (Array.isArray(params.bookIds) && params.bookIds.length) {
-    const books = await commitLibraryTask(async () => (await Manga.findAll()).map(book => book.toJSON()))
-    paths = books.filter(book => params.bookIds.includes(book.id)).map(book => book.filepath)
-    if (!paths.length) throw new Error('所选书籍记录不存在')
-  }
   try {
   const result = await scanLibrary({
     Manga, library, excludeFile, coverRoot: COVER_PATH,
@@ -614,8 +718,9 @@ async function runLibraryScan(params, task) {
       path.join(STORE_PATH, '.data-protection'), path.join(STORE_PATH, '.source-backups'), path.join(STORE_PATH, '.cache')],
     getBookFilelist, geneCover: taskCover, clearTemp,
     progress: setProgressBar, message: sendMessageToWebContents, newId: nanoid,
-    rebuild: params.rebuild === true, forceRefresh: params.forceRefresh === true, paths,
+    rebuild: params.rebuild === true, forceRefresh: params.forceRefresh === true, bookIds: params.bookIds?.length ? params.bookIds : null,
     signal: task.signal, onItem: task.report, onError: task.error, commit: commitLibraryTask,
+    onFirstBookReady: () => notifyLibraryUpdated(task.id, 'scan'),
     getMergedSources: () => libraryOrganizer.mergedSources(),
     beforeCommit: () => {
       if (setting.library !== library || setting.excludeFile !== excludeFile) throw new Error('书库设置已改变，本次扫描未提交，请重新扫描')
@@ -660,8 +765,13 @@ taskService.register('relocate', async (params, task) => {
 
 ipcMain.handle('task-list', () => taskService.list())
 ipcMain.handle('task-start', (_event, kind, options = {}) => {
-  if (!['scan', 'metadata'].includes(kind)) throw new Error('不支持的任务类型')
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw new Error('任务参数无效')
+  if (kind === 'metadata-batch') {
+    if (!['missing', 'all'].includes(options.scope) || !SOURCE_TYPES.includes(options.source)) throw new Error('批量拉取范围或来源无效')
+    const params = { scope:options.scope, source:options.source, library:setting.library || '' }
+    return taskService.start(kind, params, { key:kind + ':' + JSON.stringify(params) })
+  }
+  if (!['scan', 'metadata'].includes(kind)) throw new Error('不支持的任务类型')
   const params = { rebuild: kind === 'scan' && options.rebuild === true }
   if (kind === 'metadata' && Array.isArray(options.bookIds)) {
     if (options.bookIds.length > 100000 || options.bookIds.some(id => !validBookId(id))) throw new Error('书籍列表无效')
@@ -700,14 +810,20 @@ ipcMain.handle('patch-local-metadata', async (event, arg) => {
   return commitLibraryTask(loadBookListFromDatabase)
 })
 
-ipcMain.handle('patch-local-metadata-by-book', async (event, book) => {
+ipcMain.handle('patch-local-metadata-by-book', async (_event, book, options) => {
   if (!book || !validBookId(book.id)) throw new Error('书籍记录无效')
   const result = await taskService.run('metadata', { bookIds: [book.id] }, { key: 'metadata:' + book.id })
-  if (result.failures) throw new Error(result.errors[0]?.message || '本地元数据刷新失败')
   if (result.cancelled) throw new Error('已取消本地元数据刷新')
+  const outcome = result.bookResults.find(item => item.bookId === book.id)
+  if (!outcome) throw new Error('本地元数据刷新未完成')
+  if (outcome.status !== 'refreshed') {
+    if (options?.detailed === true) return outcome
+    throw new Error(outcome.message)
+  }
   const refreshed = await commitLibraryTask(() => Manga.findByPk(book.id, { raw: true }))
   if (!refreshed) throw new Error('书籍记录不存在')
-  return _.pick(refreshed, ['coverPath', 'hash', 'pageCount', 'bundleSize', 'mtime', 'coverHash', 'identityFingerprint', 'sourceSignature'])
+  const fields = _.pick(refreshed, ['coverPath', 'hash', 'pageCount', 'bundleSize', 'mtime', 'coverHash', 'identityFingerprint', 'sourceSignature', 'exist'])
+  return options?.detailed === true ? { ...outcome, book: fields } : fields
 })
 
 // Function to read the .ehviewer file
@@ -734,76 +850,14 @@ ipcMain.handle('get-ehviewer-data', async (event, dir) => {
   return getEhviewerDataManually(dir)
 })
 
-ipcMain.handle('get-ex-webpage', async (event, { url, cookie }) => {
-  url = webURL(url, ['exhentai.org', 'e-hentai.org'])
-  if (setting.proxy) {
-    return await fetch(url, {
-      timeout: 30000, size: 16 * 1024 * 1024, redirect: 'error',
-      headers: {
-        Cookie: cookie
-      },
-      agent: new HttpsProxyAgent(setting.proxy)
-    })
-    .then(async res => {
-      const result = await res.text()
-      if (!result) throw new Error('Empty response, maybe the cookie is expired')
-      return result
-    })
-    .catch(e => {
-      sendMessageToWebContents(`Get ex page failed because ${e}`)
-    })
-  } else {
-    return await fetch(url, {
-      timeout: 30000, size: 16 * 1024 * 1024, redirect: 'error',
-      headers: {
-        Cookie: cookie
-      }
-    })
-    .then(async res => {
-      const result = await res.text()
-      if (!result) throw new Error('Empty response, maybe the cookie is expired')
-      return result
-    })
-    .catch(e => {
-      sendMessageToWebContents(`Get ex page failed because ${e}`)
-    })
-  }
-})
+ipcMain.handle('get-ex-webpage', (_event, { url, cookie }) =>
+  requestSource(webURL(url, ['exhentai.org', 'e-hentai.org']), { cookie: cookie || '', proxy: setting.proxy || '' }))
 
-ipcMain.handle('post-data-ex', async (event, { url, data }) => {
-  url = webURL(url, ['api.e-hentai.org', 'exhentai.org', 'e-hentai.org'])
-  if (setting.proxy) {
-    return await fetch(url, {
-      timeout: 30000, size: 16 * 1024 * 1024, redirect: 'error',
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      agent: new HttpsProxyAgent(setting.proxy)
-    })
-    .then(res => res.text())
-    .catch(e => {
-      sendMessageToWebContents(`Get ex data failed because ${e}`)
-    })
-  } else {
-    return await fetch(url, {
-      timeout: 30000, size: 16 * 1024 * 1024, redirect: 'error',
-      method: 'POST',
-      body: JSON.stringify(data),
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    })
-    .then(res => res.text())
-    .catch(e => {
-      sendMessageToWebContents(`Get ex data failed because ${e}`)
-    })
-  }
-})
+ipcMain.handle('post-data-ex', (_event, { url, data }) =>
+  requestSource(webURL(url, ['api.e-hentai.org', 'exhentai.org', 'e-hentai.org']), { method: 'POST', data, proxy: setting.proxy || '' }))
 
-ipcMain.handle('save-book', async (event, book) => {
-  return await saveBookToDatabase(book)
+ipcMain.handle('save-book', async (event, book, authors) => {
+  return await saveBookToDatabase(book, authors)
 })
 
 ipcMain.handle('load-reading-state', () => readingState.load())
@@ -819,49 +873,23 @@ ipcMain.handle('save-reading-preferences', async (_event, id, preferences) => {
   if (!validBookId(id) || !await Manga.findByPk(id, { attributes: ['id'] })) throw new Error('无法保存不存在书籍的阅读偏好')
   return readingState.savePreferences(id, preferences)
 })
+ipcMain.handle('save-reading-visit', async (_event, id, visit) => {
+  if (!validBookId(id) || !await Manga.findByPk(id, { attributes: ['id'] })) throw new Error('无法保存不存在书籍的阅读记录')
+  return readingState.saveVisit(id, visit)
+})
 
 // home
-ipcMain.handle('get-folder-tree', async (event, filePathList) => {
-  const librarySplitPathsLength = setting.library.split(path.sep).length - 1
-  const folderList = [...new Set(filePathList.map(filepath => path.dirname(filepath)))]
-  const bookPathSplitList = folderList.sort().map(fp => fp.split(path.sep).slice(librarySplitPathsLength))
-  const folderTreeObject = {}
-  for (const folders of bookPathSplitList) {
-    _.set(folderTreeObject, folders.map(f => '_' + f), {})
-  }
-  const resolveTree = (preRoot, tree, initFolder) => {
-    _.forIn(tree, (node, label) => {
-      const trueLabel = label.slice(1)
-      if (_.isEmpty(node)) {
-        preRoot.push({
-          label: trueLabel,
-          value: trueLabel,
-          folderPath: [...initFolder, trueLabel].slice(1).join(path.sep),
-        })
-      } else {
-        preRoot.push({
-          label: trueLabel,
-          value: trueLabel,
-          folderPath: [...initFolder, trueLabel].slice(1).join(path.sep),
-          children: resolveTree([], node, [...initFolder, trueLabel]),
-        })
-      }
-    })
-    return preRoot
-  }
-  return resolveTree([], folderTreeObject, [])
-})
+ipcMain.handle('get-folder-tree', (event, filePathList) => folderTree(setting.library, filePathList))
 
 ipcMain.handle('load-collection-list', async (event, arg) => {
   return collectionList
 })
 
 ipcMain.handle('save-collection-list', async (event, list) => {
-  collectionList = list
-  const targetPath = path.join(STORE_PATH, 'collectionList.json')
-  const tempPath = path.join(STORE_PATH, 'collectionList.json.tmp')
-  await fs.promises.writeFile(tempPath, JSON.stringify(list, null, '  '), { encoding: 'utf-8' })
-  return await fs.promises.rename(tempPath, targetPath)
+  const next = validateCollections(list)
+  await writeAtomic(path.join(STORE_PATH, 'collectionList.json'), next)
+  collectionList = next
+  notifyLibraryUpdated(null, 'collections')
 })
 
 // detail
@@ -875,7 +903,7 @@ ipcMain.handle('show-file', async (event, filepath) => {
 
 ipcMain.handle('use-new-cover', async (event, filepath) => {
   const copyTempCoverPath = path.join(TEMP_PATH, nanoid(8) + path.extname(filepath))
-  const coverPath = path.join(COVER_PATH, nanoid() + path.extname(filepath))
+  const coverPath = path.join(COVER_PATH, 'custom-' + nanoid() + path.extname(filepath))
   try {
     await fs.promises.copyFile(filepath, copyTempCoverPath)
     await sharp(copyTempCoverPath, { failOnError: false })
@@ -889,12 +917,17 @@ ipcMain.handle('use-new-cover', async (event, filepath) => {
   }
 })
 
-const openLocalBook = async (filepath) => {
-  if (isQuitting) return
+const openLocalBook = async (filepath, book = null, sourceChecked = false) => {
+  if (typeof filepath !== 'string' || !filepath.trim() || filepath.includes('\0')) throw new Error('书籍路径无效')
+  if (isQuitting) return { opened:false }
+  if (book && !sourceChecked) {
+    await fs.promises.access(filepath)
+    if (isQuitting) return { opened:false }
+  }
   if (setting.imageExplorer) {
     const executable = readerExecutable(setting.imageExplorer)
     await fs.promises.access(executable)
-    if (isQuitting) return
+    if (isQuitting) return { opened:false }
     await new Promise((resolve, reject) => {
       const child = execFile(executable, [path.resolve(filepath)], { windowsHide: true }, error => {
         if (error) sendMessageToWebContents(`Open reader failed: ${error.message}`)
@@ -906,9 +939,35 @@ const openLocalBook = async (filepath) => {
     const error = await shell.openPath(filepath)
     if (error) throw new Error(error)
   }
+  if (!book || !validBookId(book.id)) return { opened:true, bookId:null, recorded:false }
+  const visit = { time:Date.now(), source:'external' }
+  try {
+    const saved = await readingState.saveVisit(book.id, visit)
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('reading-visit-saved', { bookId:book.id, visit:saved })
+    return { opened:true, bookId:book.id, recorded:true, visit:saved }
+  } catch (error) {
+    const recordingError = '外部阅读器已打开，阅读记录尚未保存：' + error.message
+    sendMessageToWebContents(recordingError)
+    return { opened:true, bookId:book.id, recorded:false, visit, recordingError }
+  }
 }
 
-ipcMain.handle('open-local-book', (event, filepath) => openLocalBook(filepath))
+ipcMain.handle('open-local-book', async (_event, filepath, options = {}) => {
+  if (typeof filepath !== 'string' || !filepath.trim() || filepath.includes('\0') || !options || typeof options !== 'object' || Array.isArray(options) ||
+      Object.keys(options).some(key => key !== 'bookId')) throw new Error('外部阅读参数无效')
+  let book
+  if (options.bookId !== undefined) {
+    if (!validBookId(options.bookId)) throw new Error('书籍 ID 无效')
+    book = await Manga.findByPk(options.bookId, { raw:true })
+    if (!book || pathKey(book.filepath) !== pathKey(filepath)) throw new Error('书籍位置已更新，请从书库重新打开')
+  } else {
+    const rows = await Manga.findAll({ attributes:['id','filepath','hiddenBook','exist'], raw:true })
+    const matches = rows.filter(row => typeof row.filepath === 'string' && pathKey(row.filepath) === pathKey(filepath))
+    if (matches.length > 1) throw new Error('多个记录指向这个来源，请从书籍详情打开')
+    book = matches[0] || null
+  }
+  return openLocalBook(filepath, book)
+})
 
 ipcMain.handle('get-default-manga-reader', async (event, arg) => {
   return _mange_reader
@@ -1146,6 +1205,16 @@ ipcMain.handle('select-file', async (event, title, filters) => {
 ipcMain.handle('load-setting', async (event, arg) => {
   return setting
 })
+ipcMain.handle('data-locations', () => ({ storePath:STORE_PATH, metadataPath:metadataSqliteFile }))
+ipcMain.handle('save-library-exclusion', async (_event, pattern) => {
+  if (typeof pattern !== 'string') throw new Error('请输入有效的书库排除规则')
+  try { new RegExp(pattern) }
+  catch { throw new Error('书库排除规则不是有效的正则表达式') }
+  const updated = { ...setting, excludeFile: pattern }
+  await writeAtomic(path.join(STORE_PATH, 'setting.json'), updated)
+  setting = updated
+  return pattern
+})
 ipcMain.handle('image-cache-status', () => getImageCacheStatus())
 ipcMain.handle('image-cache-clear', () => clearUnusedImageCache())
 ipcMain.handle('image-cache-budget', async (_event, bytes) => {
@@ -1193,54 +1262,42 @@ ipcMain.handle('window-close', (event) => {
 
 ipcMain.handle('relaunch-app', () => shutdownGuard.relaunch())
 
-ipcMain.handle('save-setting', async (event, receiveSetting) => {
-  if (receiveSetting.proxy) {
-    await session.defaultSession.setProxy({
-      mode: 'fixed_servers',
-      proxyRules: receiveSetting.proxy
-    })
-  } else {
-    // 清空代理设置后要显式改回直连,否则旧代理会一直生效到重启
-    await session.defaultSession.setProxy({ mode: 'direct' })
-  }
-  // metadataPath 为空时 path.join(undefined) 会抛错,而这里抛错会让后面的写盘整个跳过,
-  // 表现为此后所有设置修改都保存不了
-  const newMetadataDir = receiveSetting.metadataPath || STORE_PATH
-  const oldMetadataDir = setting.metadataPath || STORE_PATH
-  if (newMetadataDir !== oldMetadataDir) {
-    try {
-      const newMetadataFile = path.join(newMetadataDir, './metadata.sqlite')
-      const replacement = prepareMetadataModel(newMetadataFile)
-      try { await replacement.sync() } catch (error) { await replacement.sequelize.close(); throw error }
-      const previous = Metadata
-      Metadata = replacement
-      metadataSqliteFile = newMetadataFile
-      await previous.sequelize.close()
-    } catch (e) {
-      sendMessageToWebContents(`Switch metadata path failed: ${e}`)
-      throw e
-    }
-  }
-  if (receiveSetting.enabledLANBrowsing !== setting.enabledLANBrowsing) {
-    if (receiveSetting.enabledLANBrowsing) {
-      enableLANBrowsing()
-    } else {
-      disableLANBrowsing()
-    }
-  }
-  if (receiveSetting.startOnLogin !== setting.startOnLogin) {
-    app.setLoginItemSettings({
-      openAtLogin: receiveSetting.startOnLogin
-    })
-  }
-  // Cache settings have their own validated IPC. Keep its latest value when a
-  // classic settings window saves an older whole-settings snapshot.
-  if (setting.imageCacheBudgetMB !== undefined) receiveSetting.imageCacheBudgetMB = setting.imageCacheBudgetMB
-  setting = receiveSetting
+ipcMain.handle('save-setting', async (_event, receiveSetting) => {
+  if (!receiveSetting || typeof receiveSetting !== 'object' || Array.isArray(receiveSetting)) throw new Error('程序设置格式无效')
+  const previous = setting, next = { ...receiveSetting }
+  if (setting.imageCacheBudgetMB !== undefined) next.imageCacheBudgetMB = setting.imageCacheBudgetMB
+  const newMetadataDir = next.metadataPath || STORE_PATH, oldMetadataDir = previous.metadataPath || STORE_PATH
+  if (typeof newMetadataDir !== 'string' || !path.isAbsolute(newMetadataDir)) throw new Error('元数据目录需要绝对路径')
+  const proxyOptions = value => value ? { mode:'fixed_servers', proxyRules:value } : { mode:'direct' }
   const targetPath = path.join(STORE_PATH, 'setting.json')
-  const tempPath = path.join(STORE_PATH, 'setting.json.tmp')
-  await fs.promises.writeFile(tempPath, JSON.stringify(setting, null, '  '), { encoding: 'utf-8' })
-  return await fs.promises.rename(tempPath, targetPath)
+  let replacement, written = false
+  try {
+    if (newMetadataDir !== oldMetadataDir) {
+      replacement = prepareMetadataModel(path.join(newMetadataDir, 'metadata.sqlite'))
+      await replacement.sync()
+    }
+    await session.defaultSession.setProxy(proxyOptions(next.proxy))
+    await writeAtomic(targetPath, next)
+    written = true
+    setting = next
+    if (next.startOnLogin !== previous.startOnLogin) app.setLoginItemSettings({ openAtLogin:!!next.startOnLogin })
+    if (next.enabledLANBrowsing !== previous.enabledLANBrowsing) next.enabledLANBrowsing ? enableLANBrowsing() : disableLANBrowsing()
+    if (replacement) {
+      const oldModel = Metadata
+      Metadata = replacement
+      metadataSqliteFile = path.join(newMetadataDir, 'metadata.sqlite')
+      replacement = null
+      await oldModel.sequelize.close().catch(error => console.error('旧元数据连接未能释放：', error.message))
+    }
+    return setting
+  } catch (error) {
+    setting = previous
+    if (replacement) await replacement.sequelize.close().catch(() => {})
+    if (written) await writeAtomic(targetPath, previous)
+    await session.defaultSession.setProxy(proxyOptions(previous.proxy)).catch(() => {})
+    if (next.startOnLogin !== previous.startOnLogin) try { app.setLoginItemSettings({ openAtLogin:!!previous.startOnLogin }) } catch {}
+    throw error
+  }
 })
 
 const backupName = () => '颜如玉-备份-' + new Date().toISOString().replace(/[:.]/g, '-') + '.yru-backup'
@@ -1357,18 +1414,26 @@ ipcMain.handle('archive-recovery-restore', async (_event, id) => {
   ++readerGeneration
   await readerQueue(async () => { await readerTask })
   const result = await restoreArchiveRecoveryPoint(STORE_PATH, id, { libraryPath: setting.library })
+  let generatedCover, retainedCover
   try {
     const book = await Manga.findOne({ where: { filepath: result.restoredPath }, raw: true })
     if (book) {
       const refreshed = await geneCover(book.filepath, book.type)
+      generatedCover = refreshed.coverPath
       const hash = await hashFile(refreshed.targetFilePath)
       const identityFingerprint = await fingerprintBook(book.filepath, book.type)
-      await Manga.update({ coverPath: refreshed.coverPath, pageCount: refreshed.pageCount,
-        bundleSize: refreshed.bundleSize, mtime: refreshed.mtime.toJSON(), coverHash: refreshed.coverHash,
+      const cover = await coverForRefresh(book, refreshed, COVER_PATH)
+      await Manga.update({ ...cover, pageCount: refreshed.pageCount,
+        bundleSize: refreshed.bundleSize, mtime: refreshed.mtime.toJSON(),
         hash, identityFingerprint }, { where: { id: book.id } })
+      retainedCover = cover.coverPath
     }
   } catch (error) {
     result.warning = '原压缩包已恢复，书目刷新失败，可重新生成封面：' + error.message
+  } finally {
+    if (generatedCover && generatedCover !== retainedCover) {
+      await assertWithin(COVER_PATH, generatedCover).then(() => fs.promises.unlink(generatedCover)).catch(() => {})
+    }
   }
   lanListExpires = 0
   return result

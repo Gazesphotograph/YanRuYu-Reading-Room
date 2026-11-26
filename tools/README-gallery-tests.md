@@ -1,5 +1,19 @@
 # 三维图库回归检查
 
+日常迭代按改动选择小规模专项测试。`npm test` 使用两本模拟书检查工作区往返。仅在排查报错需要扩大范围或用户明确要求时运行 `npm run test:all`。以下为历次验收记录。
+
+2026-11-26 2.0 拉取、阅读档案与管理能力迁移：
+
+```powershell
+node tools/test-metadata-sources.cjs
+node tools/test-metadata-history-ui.cjs
+node tools/test-workspace-management.cjs
+node tools/test-workspace-management-ui.cjs
+node tools/test-management-desktop.cjs
+```
+
+覆盖 HTTP 错误、请求取消与重试、元数据字段预览、双数据库失败回滚、旧打开记录恢复、阅读与房间返回、合集成员稳定 ID、SQLite 失败重试、文件路径预览与源签名冲突、移动与回收后的原件哈希，以及只读设置故障与重启。使用中性测试书籍与独立临时目录。测试浏览器会自动定位已安装的 Edge／Chrome，或使用 `GALLERY_BROWSER_PATH` 指定的程序。
+
 2026-09-14 跨电脑迁移与重复记录修复：
 
 ```powershell

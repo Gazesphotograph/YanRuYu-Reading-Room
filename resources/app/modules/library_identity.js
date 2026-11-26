@@ -5,6 +5,7 @@ const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { assertWithin, isWithin } = require('./safety')
 const { checkCancelled } = require('./source_signature')
+const { moveWithoutReplacing } = require('./exclusive_move')
 
 const IMAGE_EXTENSION = /\.(jpg|jpeg|png|webp|avif|gif)$/i
 const DERIVED_FIELDS = ['filepath', 'type', 'coverPath', 'hash', 'pageCount', 'bundleSize', 'mtime', 'coverHash', 'identityFingerprint', 'sourceSignature', 'exist']
@@ -186,7 +187,7 @@ async function moveWithIdentity({ oldPath, newPath, type, libraryRoot, persist, 
   try { await fs.promises.lstat(newPath); throw new Error('目标路径已存在，移动未执行') }
   catch (error) { if (error.code !== 'ENOENT') throw error }
   const identityFingerprint = await fingerprint(oldPath, type, { libraryRoot })
-  await fs.promises.rename(oldPath, newPath)
+  await moveWithoutReplacing(oldPath, newPath, libraryRoot)
   try {
     if (await fingerprint(newPath, type, { libraryRoot }) !== identityFingerprint) throw new Error('移动后的书籍校验不一致')
     await persist(identityFingerprint)
@@ -196,7 +197,7 @@ async function moveWithIdentity({ oldPath, newPath, type, libraryRoot, persist, 
       // Never overwrite a concurrently created source during rollback.
       try { await fs.promises.lstat(oldPath); throw new Error('原路径已被占用') }
       catch (checkError) { if (checkError.code !== 'ENOENT') throw checkError }
-      await fs.promises.rename(newPath, oldPath)
+      await moveWithoutReplacing(newPath, oldPath, libraryRoot)
     } catch (rollbackError) {
       throw new Error(`移动记录保存失败且无法移回原路径。书籍保留在 ${newPath}：${rollbackError.message}`, { cause: error })
     }

@@ -9,7 +9,7 @@ const path = require('node:path')
 const os = require('node:os')
 const { prepareMangaModel, prepareMetadataModel } = require('../resources/app/modules/database')
 const { createReadingStateStore, writeAtomic } = require('../resources/app/modules/reading_state')
-const { createLibraryOrganizer, validateOrganizerState } = require('../resources/app/modules/library_organizer')
+const { createLibraryOrganizer, validateOrganizerState, serializeOrganizerJournal, MAX_JOURNAL_BYTES } = require('../resources/app/modules/library_organizer')
 const { fingerprintBook, mergeRebuiltBook } = require('../resources/app/modules/library_identity')
 const { sourceSignature } = require('../resources/app/modules/source_signature')
 const { serialQueue } = require('../resources/app/modules/safety')
@@ -30,9 +30,9 @@ async function fixture(t) {
       if (failCollections) { failCollections = false; throw new Error('simulated collection disk failure') }
       await writeAtomic(path.join(directory, 'collectionList.json'), value); collections = value
     },
-    write: async (filename, value) => {
+    write: async (filename, value, serialized) => {
       if (failJournalPhase && value.operations.at(-1)?.status === failJournalPhase) { failJournalPhase = ''; throw new Error('simulated journal disk failure') }
-      return writeAtomic(filename, value)
+      return writeAtomic(filename, value, serialized)
     }
   }
   const service = createLibraryOrganizer(options)
@@ -61,6 +61,79 @@ async function fixture(t) {
     failCollections: () => { failCollections = true }, failJournal: phase => { failJournalPhase = phase } }
 }
 const row = async (model, id) => (await model.findByPk(id)).toJSON()
+
+test('legacy UTC timestamps survive removal and undo without a library-wide rewrite', async t => {
+  const f = await fixture(t), book = await f.add('Historical edit')
+  const updated = '2025-04-15T10:11:12.345Z'
+  await f.Manga.sequelize.query('UPDATE Mangas SET updatedAt = ? WHERE id = ?', { replacements:[updated, book.id] })
+  await fs.rename(book.filepath, path.join(f.directory, 'parked-legacy'))
+  const preview = await f.service.previewRemoveMissing({ bookIds:[book.id] })
+  const removed = await f.service.apply(preview.token)
+  await f.service.undo(removed.id)
+  const restored = await row(f.Manga, book.id)
+  assert.equal(restored.updatedAt.toISOString(), updated)
+  assert.equal(restored.createdAt.toISOString(), book.createdAt.toISOString())
+})
+
+test('journal capacity counts exactly the UTF-8 bytes written, including non-ASCII text', async t => {
+  const f = await fixture(t), book = await f.add('示例 📖')
+  const preview = await f.service.previewBatch({ bookIds:[book.id], fields:{mark:true} })
+  await f.service.apply(preview.token)
+  const raw = await fs.readFile(f.service.filePath, 'utf8'), journal = JSON.parse(raw)
+  assert.equal(raw, serializeOrganizerJournal(journal))
+  const op = journal.operations[0]
+  op.changes.books[0].before.title = '中文'
+  op.changes.books[0].after.title = '中文'
+  const needed = MAX_JOURNAL_BYTES - Buffer.byteLength(serializeOrganizerJournal(journal)) - 1
+  op.changes.books[0].before.title += 'a'.repeat(needed)
+  assert.equal(Buffer.byteLength(serializeOrganizerJournal(journal)), MAX_JOURNAL_BYTES - 1)
+  op.changes.books[0].before.title += 'a'
+  const exact = serializeOrganizerJournal(journal)
+  await writeAtomic(f.service.filePath, journal, exact)
+  assert.equal((await fs.stat(f.service.filePath)).size, MAX_JOURNAL_BYTES)
+  op.changes.books[0].before.title += 'a'
+  assert.throws(() => serializeOrganizerJournal(journal), { code:'ERR_ORGANIZER_JOURNAL_SIZE' })
+  const restarted = createLibraryOrganizer(f.options)
+  await restarted.ready
+  const edit = await restarted.previewBatch({ bookIds:[book.id], fields:{mark:false} })
+  await assert.rejects(restarted.apply(edit.token), { code:'ERR_ORGANIZER_JOURNAL_SIZE' })
+  assert.equal((await row(f.Manga, book.id)).mark, true)
+  assert.equal((await row(f.Metadata, book.hash)).mark, true)
+  assert.equal((await fs.stat(f.service.filePath)).size, MAX_JOURNAL_BYTES)
+  // A real over-budget file must never be accepted as a padding-only legacy file.
+  await fs.writeFile(f.service.filePath, JSON.stringify(journal))
+  await assert.rejects(createLibraryOrganizer(f.options).ready, /仍超过 64 MiB/)
+  assert.equal((await fs.stat(f.service.filePath)).size, MAX_JOURNAL_BYTES + 1)
+});
+
+test('startup compacts a valid oversized legacy journal atomically and preserves invalid input', async t => {
+  const f = await fixture(t), book = await f.add('中文 "quoted" \\ backslash')
+  const edit = await f.service.previewBatch({ bookIds:[book.id], fields:{title:'重命名'} })
+  await f.service.apply(edit.token)
+  const original = JSON.parse(await fs.readFile(f.service.filePath, 'utf8'))
+  const block = Buffer.alloc(1024 * 1024, 32)
+  async function padded(contents) {
+    const handle = await fs.open(f.service.filePath, 'w')
+    try {
+      for (let n = 0; n < 64; n++) await handle.writeFile(block)
+      await handle.writeFile(contents)
+    } finally { await handle.close() }
+  }
+  await padded(JSON.stringify(original, null, 2))
+  const before = await fs.stat(f.service.filePath)
+  const failed = createLibraryOrganizer({ ...f.options, write:async () => { throw Error('simulated compaction write failure') } })
+  await assert.rejects(failed.ready, /compaction write failure/)
+  assert.equal((await fs.stat(f.service.filePath)).size, before.size)
+  const restarted = createLibraryOrganizer(f.options)
+  await restarted.ready
+  assert.equal(await fs.readFile(f.service.filePath, 'utf8'), JSON.stringify(original))
+  await restarted.undo(original.operations[0].id)
+  assert.equal((await row(f.Manga, book.id)).title, book.title)
+  await padded('{"schemaVersion":1,"revision":1 2,"operations":[]}')
+  const size = (await fs.stat(f.service.filePath)).size
+  await assert.rejects(createLibraryOrganizer(f.options).ready, /无效 JSON/)
+  assert.equal((await fs.stat(f.service.filePath)).size, size)
+});
 
 async function disconnectSource(f, book) {
   const oldRoot = path.join(f.directory, 'old-computer-' + book.id)
@@ -259,8 +332,8 @@ test('an offline source returning during the durable journal write aborts and ro
   const offline = await disconnectSource(f, donor)
   await f.readingState.saveProgress(donor.id, { page: 2, total: 2, time: 200 })
   let restored = false
-  const service = createLibraryOrganizer({ ...f.options, write: async (filename, value) => {
-    await writeAtomic(filename, value)
+  const service = createLibraryOrganizer({ ...f.options, write: async (filename, value, serialized) => {
+    await writeAtomic(filename, value, serialized)
     if (!restored && value.operations.at(-1)?.status === 'prepared') { restored = true; await offline.restore() }
   } })
   await service.ready
@@ -475,9 +548,9 @@ test('a source returning while the removal journal is being saved is caught befo
   const f = await fixture(t), a = await f.add('Missing A'), b = await f.add('Returns during commit')
   const parkedA = path.join(f.directory, 'parked-a'), parkedB = path.join(f.directory, 'parked-b')
   await fs.rename(a.filepath, parkedA); await fs.rename(b.filepath, parkedB)
-  const returningSource = createLibraryOrganizer({ ...f.options, write: async (filename, value) => {
+  const returningSource = createLibraryOrganizer({ ...f.options, write: async (filename, value, serialized) => {
     if (value.operations.at(-1)?.status === 'prepared') await fs.rename(parkedB, b.filepath)
-    return f.options.write(filename, value)
+    return f.options.write(filename, value, serialized)
   } })
   await returningSource.ready
   const preview = await returningSource.previewRemoveMissing({ bookIds: [a.id, b.id] })

@@ -22,6 +22,8 @@ Tested in full-screen mode at 2560 × 1080 using a separate sample library.
 
 ## Download and Usage
 
+The current source includes a **2.0 development preview**. Run `npm run dev`, then enable the preview in Reading Room Settings to use the shared desk, library table, and reading room. Book details provide online metadata previews; the sidebar provides reading history and imports, and the library includes collection management. See the [2.0 verification matrix](docs/颜如玉2.0功能验收矩阵.md) for migration and validation details.
+
 Download the Windows x64 ZIP from [Releases][releases], extract it to a new folder, and double-click `exhentai-manga-manager.exe`. Node.js is not required for normal use.
 
 Upon first run, the program defaults to using the system user’s app data directory. Create a `data` folder next to the program to enable portable mode; you can also specify the absolute path to a separate data directory via the environment variable `YANRUYU_DATA_DIR`.
@@ -42,13 +44,14 @@ The development entry point builds the current source code and locked production
 | Command | Purpose |
 | --- | --- |
 | `npm run check` | JavaScript syntax, release source file allowlist, and configuration format |
-| `npm test` | Engineering, data protection, reading, organization, retrieval, and desktop isolation regression testing |
+| `npm test` | Two-book workspace smoke test for room navigation, narrow windows, and cover fallback |
 | `npm run test:engineering` | Data path isolation, release allowlist, and runtime optimization checks |
 | `npm run test:desktop` | Verifies real Electron, IPC, SQLite, and image decoding using a neutral test library |
 | `npm run test:backup-desktop` | Verifies backup export, rejection of corrupted packages, restoration, and recovery from corruption |
-| `npm run test:all` | All supported regression tests, including isolated desktop tests |
+| `npm run test:all` | Full regression suite, including isolated desktop tests. Run when needed to investigate an error or explicitly requested |
 | `npm run build` | Build the application for staging, install locked production dependencies, and generate source code hashes |
 | `npm run package` | Generate a Windows x64 application directory and ZIP file without user data |
+| `npm run package -- --preview` | Generate a separately named 2.0 preview package |
 | `npm run release:audit` | Audit the data exclusion rules and file hashes of the latest release directory |
 | `npm run compact -- --current --measure` | Measure the disk space used by the current application |
 | `npm run compact -- --current` | Losslessly compress the disk space used by the current application’s runtime files |

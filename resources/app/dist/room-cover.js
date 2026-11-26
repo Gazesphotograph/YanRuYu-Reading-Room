@@ -133,3 +133,12 @@ export function normalizeCoverTexture(texture) {
   }
   return texture;
 }
+
+export function localCover(book) {
+  if(!book?.coverPath)return '';
+  const value=String(book.coverPath).replace(/\\/g,'/');
+  if(value.startsWith('file:')){try{const url=new URL(value);return url.protocol==='file:'?url.href:'';}catch{return '';}}
+  if(value.startsWith('//'))return 'file:'+value.split('/').map(encodeURIComponent).join('/');
+  if(!/^[A-Za-z]:\//.test(value)&&!value.startsWith('/'))return '';
+  return 'file:///'+value.replace(/^\//,'').split('/').map((part,index)=>index===0&&/^[A-Za-z]:$/.test(part)?part:encodeURIComponent(part)).join('/');
+}

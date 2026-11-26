@@ -29,7 +29,7 @@ function createRuntime(initialSetting = {}, {
   platform = 'win32', imageList = [], books = [], availablePaths,
   random = () => 0, beforeFindAll = async () => {}, beforeAccess = async () => {},
   readerError, openPathError = '', browserError, portableLibrary,
-  readingProfile = true, organizerError, localSearchError,
+  readingProfile = true, organizerError, localSearchError, visitWriteError,
 } = {}) {
   const ready = deferred();
   const database = deferred();
@@ -40,7 +40,7 @@ function createRuntime(initialSetting = {}, {
   const handlers = new Map();
   const imageWork = { loads: [], metadata: [], resizes: [], files: [], copies: [], cleared: [], released: [], events: [] };
   const externalWork = { urls: [], paths: [], executions: [], dialogs: [], access: [], queries: [], updates: [] };
-  const featureWork = { organizerFlushes: 0, searchFlushes: 0 };
+  const featureWork = { organizerFlushes: 0, searchFlushes: 0, visits:[] };
   const existingPaths = availablePaths && new Set(availablePaths);
   const storedBooks = books.map(book => ({ ...book }));
   const setting = {
@@ -182,6 +182,7 @@ function createRuntime(initialSetting = {}, {
       await beforeFindAll();
       return storedBooks.map(book => options?.raw ? { ...book } : { ...book, toJSON: () => ({ ...book }) });
     },
+    async findByPk(id) { const book=storedBooks.find(book=>book.id===id);return book?{...book}:null; },
     async update(values, { where }) {
       externalWork.updates.push({ values: { ...values }, where: { ...where } });
       const matches = storedBooks.filter(book => book.id === where.id);
@@ -229,7 +230,14 @@ function createRuntime(initialSetting = {}, {
     'electron-window-state': () => ({ x: 0, y: 0, width: 1200, height: 800, manage() {} }),
     express: () => lan,
     './modules/safety': { serialQueue, readerExecutable, assertWithin: async (_root, target) => target },
-    './modules/reading_state': { createReadingStateStore: () => ({ ready: Promise.resolve(), flush: async () => {}, load: async () => ({ schemaVersion: 1, pageBase: 1, progress: {} }) }), validBookId: value => typeof value === 'string' && !!value },
+    './modules/reading_state': { createReadingStateStore: () => ({ ready: Promise.resolve(), flush: async () => {}, load: async () => ({ schemaVersion: 1, pageBase: 1, progress: {} }),
+      saveVisit: async (id,visit) => { if(visitWriteError)throw visitWriteError;featureWork.visits.push({id,visit});return {...visit}; } }), validBookId: value => typeof value === 'string' && !!value,
+      writeAtomic: async (file, value) => fakeFs.promises.writeFile(file, JSON.stringify(value)) },
+    './modules/folder_tree': { folderTree: () => [] },
+    './modules/collections': { createCollectionService: () => ({}), validateCollections: value => value },
+    './modules/book_files': { createBookFileService: () => ({}) },
+    './modules/metadata_sources': { createMetadataSources: () => ({}), requestSource: async () => { throw new Error('Unexpected source request in lifecycle fixture'); },
+      validateSourceSettings: (previous, patch) => ({...previous,...patch}), SOURCE_TYPES:[], galleryURL: () => { throw new Error('Unexpected source URL in lifecycle fixture'); } },
     './modules/library_scan': {},
     // Feature behavior is covered by its real SQLite/browser suites. These
     // lifecycle-only doubles keep the tray VM entirely isolated from storage.
@@ -247,7 +255,7 @@ function createRuntime(initialSetting = {}, {
     } },
     './modules/library_edits': require('../resources/app/modules/library_edits'),
     './modules/shutdown_guard': require('../resources/app/modules/shutdown_guard'),
-    './modules/library_identity': {},
+    './modules/library_identity': { pathKey:file=>path.resolve(file).toLowerCase() },
     './modules/sqlite_metadata_import': {},
     './modules/backup_service': { BackupService: class {} },
     './modules/client_state': {},
@@ -457,6 +465,37 @@ test('tray contains exactly three Chinese actions in order and opens the popular
   await runtime.finishDatabase();
 });
 
+test('tray random and legacy external opens persist the same stable reading visit without a page', async () => {
+  const chosen=path.join(appDir,'reading fixture.zip');
+  const runtime=createRuntime({imageExplorer:''},{books:[{id:'stable-book',filepath:chosen,exist:true}]});
+  await runtime.start();await runtime.menu('随机打开漫画');
+  assert.equal(runtime.featureWork.visits.length,1);assert.equal(runtime.featureWork.visits[0].id,'stable-book');
+  assert.equal(runtime.featureWork.visits[0].visit.source,'external');assert.equal('page' in runtime.featureWork.visits[0].visit,false);
+  const result=await runtime.invoke('open-local-book',chosen);
+  assert.equal(result.opened,true);assert.equal(result.recorded,true);assert.equal(result.bookId,'stable-book');
+  assert.equal(runtime.featureWork.visits.length,2);runtime.app.quit();
+});
+
+test('external opens validate the selected ID and report recording failure separately from launch success', async () => {
+  const chosen=path.join(appDir,'reading fixture.zip');
+  const runtime=createRuntime({imageExplorer:''},{books:[{id:'stable-book',filepath:chosen}],visitWriteError:new Error('fixture read-only archive')});
+  await runtime.start();
+  await assert.rejects(runtime.invoke('open-local-book',path.join(appDir,'stale.zip'),{bookId:'stable-book'}),/位置已更新/);
+  assert.deepEqual(runtime.externalWork.paths,[]);
+  const result=await runtime.invoke('open-local-book',chosen,{bookId:'stable-book'});
+  assert.equal(result.opened,true);assert.equal(result.recorded,false);assert.equal(result.visit.source,'external');
+  assert.match(result.recordingError,/read-only archive/);assert.deepEqual(runtime.featureWork.visits,[]);runtime.app.quit();
+});
+
+test('legacy path-only opens do not assign a reading record to an ambiguous source', async () => {
+  const chosen=path.join(appDir,'shared fixture.zip');
+  const runtime=createRuntime({imageExplorer:''},{books:[{id:'one',filepath:chosen},{id:'two',filepath:chosen}]});
+  await runtime.start();await assert.rejects(runtime.invoke('open-local-book',chosen),/多个记录/);
+  assert.deepEqual(runtime.externalWork.paths,[]);assert.deepEqual(runtime.featureWork.visits,[]);
+  const result=await runtime.invoke('open-local-book',chosen,{bookId:'two'});
+  assert.equal(result.bookId,'two');assert.equal(runtime.featureWork.visits[0].id,'two');runtime.app.quit();
+});
+
 test('random open uses the configured external reader once without revealing the tray window', async () => {
   const reader = path.join(appDir, 'mock reader', 'reader.exe');
   const chosen = path.join(appDir, 'mock library', '漫画 & %1.zip');
@@ -490,7 +529,7 @@ test('random open uses the configured external reader once without revealing the
   assert.deepEqual(work.dialogs, []);
   assert.equal(work.queries.length, 1);
   assert.equal(work.queries[0].raw, true);
-  assert.deepEqual(Array.from(work.queries[0].attributes).sort(), ['exist', 'filepath', 'hiddenBook']);
+  assert.deepEqual(Array.from(work.queries[0].attributes).sort(), ['exist', 'filepath', 'hiddenBook', 'id']);
   assert.equal(win.visible, false);
   assert.equal(win.skipTaskbar, true);
   assert.equal(win.focused, false);

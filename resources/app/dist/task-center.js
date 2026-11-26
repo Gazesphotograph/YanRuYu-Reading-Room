@@ -1,6 +1,6 @@
 const invoke = (channel, ...args) => window.ipcRenderer.invoke(channel, ...args);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, letter => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[letter]));
-const states = { queued: '等待中', running: '进行中', cancelling: '正在取消', completed: '已完成', 'completed-with-errors': '部分失败', failed: '失败', cancelled: '已取消', interrupted: '上次中断' };
+const states = { queued: '等待中', running: '进行中', cancelling: '正在取消', completed: '已完成', 'completed-with-errors': '有项目未完成', failed: '失败', cancelled: '已取消', interrupted: '上次中断' };
 let tasks = [], dialog, initialError = '', pending = new Set();
 
 function ensureStyles() {
@@ -27,15 +27,23 @@ function render() {
     const active = ['queued', 'running', 'cancelling'].includes(task.status);
     const progress = Number.isFinite(task.progress) ? Math.max(0, Math.min(1, task.progress)) : null;
     const summary = task.result && ['scan', 'metadata'].includes(task.kind)
-      ? `新增 ${task.result.added || 0} · 更新 ${task.result.updated || 0} · 未变 ${task.result.unchanged || 0} · 重定位 ${task.result.relocated || 0}` : '';
+      ? `新增 ${task.result.added || 0} · 更新 ${task.result.updated || 0} · 未变 ${task.result.unchanged || 0} · 重定位 ${task.result.relocated || 0}`
+      : task.result && task.kind === 'metadata-batch' ? `更新 ${task.result.updated} · 一致 ${task.result.unchanged} · 跳过 ${task.result.skipped} · 未完成 ${task.result.failures} · 待处理 ${Math.max(0, task.total - task.current)}`
+      : task.result && task.kind === 'sqlite-import' ? `导入 ${task.result.imported || 0} · 跳过 ${task.result.skipped || 0} · 未匹配 ${task.result.unmatched || 0} · 失败 ${task.result.failures || 0}` : '';
     const errors = Array.isArray(task.errors) ? task.errors : [];
+    const errorItems = errors.map(error => {
+      const resolve = task.kind === 'metadata-batch' && error.bookId && document.querySelector('.shell')
+        ? `<button type="button" data-task-action="resolve-metadata" data-book-id="${esc(error.bookId)}">单本拉取</button>` : '';
+      return `<li>${error.filepath ? `<span class="task-center-path">${esc(error.filepath)}</span>` : ''}<span>${esc(error.message)}</span>${resolve}</li>`;
+    }).join('');
     return `<article class="task-center-item" data-task-status="${esc(task.status)}"><div class="task-center-item-head"><strong>${esc(task.title)}</strong><span>${esc(states[task.status] || task.status)}</span></div>
       <p>${esc(task.message || '')}</p>${task.filepath ? `<p class="task-center-path" title="${esc(task.filepath)}">${esc(task.filepath)}</p>` : ''}
       ${active ? `<progress max="1" ${progress === null ? '' : `value="${progress}"`} aria-label="${esc(task.title)}进度"></progress><span class="task-center-progress">${task.total ? `${esc(task.current)} / ${esc(task.total)}` : '正在准备…'}${progress === null ? '' : ` · ${Math.round(progress * 100)}%`}</span>` : ''}
       ${summary ? `<p class="task-center-summary">${esc(summary)}</p>` : ''}
-      ${errors.length ? `<details data-task-details="${esc(task.id)}" ${expanded.has(task.id) ? 'open' : ''}><summary>查看失败明细（${esc(task.errorCount || errors.length)}）</summary><ul>${errors.map(error => `<li>${error.filepath ? `<span class="task-center-path">${esc(error.filepath)}</span>` : ''}<span>${esc(error.message)}</span></li>`).join('')}</ul>${task.errorCount > errors.length ? `<p>面板显示前 ${errors.length} 条失败；重试会重新检查全部项目。</p>` : ''}</details>` : ''}
+      ${task.kind === 'metadata-fetch' && task.status === 'completed' ? '<p>元数据已拉取为预览，核对并应用后才会修改书籍。</p>' : ''}
+      ${errors.length ? `<details data-task-details="${esc(task.id)}" ${expanded.has(task.id) ? 'open' : ''}><summary>查看失败明细（${esc(task.errorCount || errors.length)}）</summary><ul>${errorItems}</ul>${task.errorCount > errors.length ? `<p>面板显示前 ${errors.length} 条失败；重试会重新检查全部项目。</p>` : ''}</details>` : ''}
       ${task.historyWarning ? `<p class="task-center-warning">${esc(task.historyWarning)}</p>` : ''}
-      <div class="task-center-item-actions">${task.canCancel ? `<button type="button" data-task-action="cancel" data-task-id="${esc(task.id)}" ${pending.has(task.id) ? 'disabled' : ''}>取消</button>` : ''}
+      <div class="task-center-item-actions">${task.result?.previewId && document.querySelector('.shell') ? `<button type="button" data-task-action="preview" data-task-id="${esc(task.id)}">查看元数据预览</button>` : ''}${task.canCancel ? `<button type="button" data-task-action="cancel" data-task-id="${esc(task.id)}" ${pending.has(task.id) ? 'disabled' : ''}>取消</button>` : ''}
       ${task.canRetry ? `<button type="button" data-task-action="retry" data-task-id="${esc(task.id)}" ${pending.has(task.id) ? 'disabled' : ''}>重试</button>` : ''}
       ${!active ? `<button type="button" data-task-action="dismiss" data-task-id="${esc(task.id)}" ${pending.has(task.id) ? 'disabled' : ''}>移除记录</button>` : ''}
       <time>${esc(new Date(task.createdAt).toLocaleString('zh-CN'))}</time></div></article>`;
@@ -68,6 +76,17 @@ export async function openTaskCenter() {
     const button = event.target.closest('button[data-task-action]'); if (!button || button.disabled) return;
     const action = button.dataset.taskAction, id = button.dataset.taskId;
     if (action === 'close') { dialog.close(); return; }
+    if (action === 'resolve-metadata') {
+      dialog.close();
+      window.dispatchEvent(new CustomEvent('yanruyu-metadata-preview', { detail:{ bookId:button.dataset.bookId } }));
+      return;
+    }
+    if (action === 'preview') {
+      const task = tasks.find(item => item.id === id);
+      dialog.close();
+      window.dispatchEvent(new CustomEvent('yanruyu-metadata-preview', { detail: task?.result }));
+      return;
+    }
     const activeDialog = dialog;
     const status = text => { if (activeDialog?.open) activeDialog.querySelector('.task-center-status').textContent = text; };
     button.disabled = true; if (id) pending.add(id);
@@ -99,7 +118,9 @@ window.YanruyuTasks = {
   open: openTaskCenter,
   startScan: async (options = {}) => {
     const task = await invoke('task-start', 'scan', { rebuild: options.rebuild === true });
-    await openTaskCenter(); return task;
+    if (options.openCenter !== false) await openTaskCenter();
+    else await refresh();
+    return task;
   },
   refresh,
   get tasks() { return tasks; }

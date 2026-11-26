@@ -44,6 +44,24 @@ function normalizePreferences(value) {
     zoom: value.zoom === undefined ? 100 : Math.round(value.zoom), coverAlone: value.coverAlone !== false }
 }
 
+function normalizeVisit(value) {
+  if (!isObject(value) || !Number.isFinite(value.time) || value.time < 0 || value.time > 8640000000000000 ||
+      !['room', 'classic', 'comicread', 'external', 'migration'].includes(value.source)) throw new Error('阅读记录格式无效')
+  return { time: value.time, source: value.source }
+}
+
+function migrateLegacyVisits(raw, existing = {}) {
+  const visits = { ...existing }, recent = parseLegacy(raw.recentRead, [])
+  for (const item of Array.isArray(recent) ? recent : []) {
+    if (!isObject(item) || !validBookId(item.id) || !Number.isFinite(item.read_time) || item.read_time <= 0) continue
+    try {
+      const next = normalizeVisit({ time: item.read_time * 1000, source: 'migration' })
+      if (!visits[item.id] || visits[item.id].time < next.time) visits[item.id] = next
+    } catch { /* The original legacy file remains in the migration snapshot. */ }
+  }
+  return visits
+}
+
 function pageFromLegacyId(bookId, pageId) {
   if (!validBookId(bookId) || typeof pageId !== 'string' || !pageId.startsWith(bookId + '_')) return null
   const suffix = pageId.slice(bookId.length + 1)
@@ -53,7 +71,7 @@ function pageFromLegacyId(bookId, pageId) {
 }
 
 function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, pageBase: 1, revision: 0, progress: {}, preferences: {}, migrations: {}, migrationSnapshots: [] }
+  return { schemaVersion: SCHEMA_VERSION, pageBase: 1, revision: 0, progress: {}, preferences: {}, visits: {}, migrations: {}, migrationSnapshots: [] }
 }
 
 function validateState(value) {
@@ -72,6 +90,13 @@ function validateState(value) {
     for (const [id, preferences] of Object.entries(value.preferences)) {
       if (!validBookId(id)) throw new Error('阅读偏好包含无效书籍 ID')
       normalizePreferences(preferences)
+    }
+  }
+  if (value.visits !== undefined) {
+    if (!isObject(value.visits)) throw new Error('阅读记录档案格式无效')
+    for (const [id, visit] of Object.entries(value.visits)) {
+      if (!validBookId(id)) throw new Error('阅读记录包含无效书籍 ID')
+      normalizeVisit(visit)
     }
   }
   return value
@@ -119,12 +144,12 @@ function migrateLegacyProgress(raw, books, existing = {}) {
   return { progress, imported }
 }
 
-async function writeAtomic(target, value) {
+async function writeAtomic(target, value, serialized = JSON.stringify(value, null, 2) + '\n') {
   const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
   let handle
   try {
     handle = await fs.promises.open(temporary, 'wx', 0o600)
-    await handle.writeFile(JSON.stringify(value, null, 2) + '\n', 'utf8')
+    await handle.writeFile(serialized, 'utf8')
     await handle.sync()
     await handle.close()
     handle = null
@@ -147,11 +172,25 @@ function createReadingStateStore({ storePath, write = writeAtomic } = {}) {
       if (error.code !== 'ENOENT') throw new Error(`阅读档案无法载入，原文件已保留：${error.message}`, { cause: error })
       state = emptyState()
     }
+    // Earlier profiles archived recentRead but only imported records with a
+    // known page. Recover their original timestamps without inventing a page.
+    if (state.visits === undefined) {
+      const next = clone(state)
+      next.visits = {}
+      for (const source of state.migrationSnapshots) if (isObject(source.storage)) next.visits = migrateLegacyVisits(source.storage, next.visits)
+      const imported = Object.keys(next.visits).length
+      if (imported) {
+        next.migrations.recentV1 = { migratedAt: Date.now(), imported }
+        next.revision++
+        await write(filePath, next)
+      }
+      state = next
+    }
   })()
   // Initialization errors are reported by load/flush; do not create an unhandled rejection.
   ready.catch(() => {})
   const snapshot = () => clone({ schemaVersion: state.schemaVersion, pageBase: 1, revision: state.revision,
-    progress: state.progress, preferences: state.preferences || {}, migrations: state.migrations })
+    progress: state.progress, preferences: state.preferences || {}, visits: state.visits || {}, migrations: state.migrations })
   const commit = async next => {
     next.revision = state.revision + 1
     await write(filePath, next)
@@ -171,8 +210,21 @@ function createReadingStateStore({ storePath, write = writeAtomic } = {}) {
       // Arrival order is authoritative so intentional rereading can move backwards.
       // Clients share this serialized store; migration alone uses legacy timestamps.
       next.progress[id] = nextProgress
+      next.visits ||= {}
+      const visit = { time: nextProgress.time, source: nextProgress.source || 'room' }
+      if (!next.visits[id] || next.visits[id].time <= visit.time) next.visits[id] = normalizeVisit(visit)
       await commit(next)
       return clone(next.progress[id])
+    }),
+    saveVisit: (id, value) => queue(async () => {
+      await ready
+      if (!validBookId(id)) throw new Error('书籍 ID 无效')
+      const visit = normalizeVisit(value), next = clone(state)
+      next.visits ||= {}
+      if (next.visits[id]?.time >= visit.time) return clone(next.visits[id])
+      next.visits[id] = visit
+      await commit(next)
+      return clone(visit)
     }),
     // Organizer undo must be able to restore the absence of a record, and it
     // must never overwrite progress saved after the user's merge preview.
@@ -216,7 +268,9 @@ function createReadingStateStore({ storePath, write = writeAtomic } = {}) {
       const { progress, imported } = migrateLegacyProgress(raw, books, state.progress)
       const migratedAt = Date.now()
       next.progress = progress
+      next.visits = migrateLegacyVisits(raw, state.visits || {})
       next.migrations.legacyV1 = { migratedAt, imported }
+      next.migrations.recentV1 = { migratedAt, imported: Object.keys(next.visits).length }
       next.migrationSnapshots.push({ name: 'localStorage-before-reading-state-v1', migratedAt,
         sha256: createHash('sha256').update(JSON.stringify(raw)).digest('hex'), storage: raw })
       return commit(next)
@@ -224,5 +278,5 @@ function createReadingStateStore({ storePath, write = writeAtomic } = {}) {
   }
 }
 
-module.exports = { SCHEMA_VERSION, LEGACY_KEYS, normalizeProgress, normalizePreferences, validBookId, pageFromLegacyId,
-  migrateLegacyProgress, validateState, writeAtomic, createReadingStateStore }
+module.exports = { SCHEMA_VERSION, LEGACY_KEYS, normalizeProgress, normalizePreferences, normalizeVisit, validBookId, pageFromLegacyId,
+  migrateLegacyProgress, migrateLegacyVisits, validateState, writeAtomic, createReadingStateStore }

@@ -4,6 +4,7 @@ const fs = require('fs')
 const path = require('path')
 const sqlite3 = require('sqlite3')
 const { open } = require('sqlite')
+const { checkCancelled } = require('./source_signature')
 
 const TAG_COLUMNS = ['language', 'parody', 'character', 'group', 'artist', 'male', 'female', 'mixed', 'other', 'cosplayer', 'rest']
 const METADATA_FIELDS = ['title', 'title_jpn', 'status', 'tags', 'filecount', 'rating', 'posted', 'filesize', 'category', 'url']
@@ -176,7 +177,7 @@ function resultMessage(counts, error) {
   return `${title}：成功 ${counts.imported}，失败 ${counts.failed}，未匹配 ${counts.unmatched}，跳过 ${counts.skipped}。${error ? ' 原因：' + error : ''}`
 }
 
-async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhviewerData, onProgress }) {
+async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhviewerData, onProgress, signal }) {
   const validInput = Array.isArray(books)
   const bList = validInput ? books.map(book => ({ ...book })) : []
   const counts = { total: bList.length, eligible: bList.filter(book => book.status !== 'tagged').length, matched: 0, imported: 0, failed: 0, unmatched: 0, skipped: bList.filter(book => book.status === 'tagged').length }
@@ -188,6 +189,7 @@ async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhvie
     failures.push({ id: book?.id || null, title: book?.title || '', reason })
   }
   try {
+    checkCancelled(signal)
     if (!validInput) throw new Error('导入书目列表格式无效')
     source = await preflightSource(filename)
     const mangaPath = Manga.sequelize.options.storage
@@ -208,6 +210,7 @@ async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhvie
       if (!metadataColumns.has(field)) throw new Error('元数据数据库缺少必要字段：' + field)
     }
     for (let index = 0; index < bList.length; index++) {
+      checkCancelled(signal)
       const selected = bList[index]
       reportProgress(bList.length ? index / bList.length : 1)
       if (selected.status === 'tagged') continue
@@ -236,12 +239,14 @@ async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhvie
       }
     }
     if (plans.length) {
+      checkCancelled(signal)
       await target.exec('BEGIN IMMEDIATE')
       transactionOpen = true
       for (const plan of plans) {
+        checkCancelled(signal)
         const fields = Object.keys(plan.metadata).filter(field => METADATA_FIELDS.includes(field))
         const values = fields.map(field => field === 'tags' ? JSON.stringify(plan.metadata[field]) : plan.metadata[field])
-        const now = new Date().toISOString()
+        const now = Manga.rawAttributes.updatedAt.type.stringify(new Date(), { timezone: '+00:00' })
         const unchanged = await target.get(`SELECT hash, updatedAt FROM ${mangaTable} WHERE id = ?`, [plan.current.id])
         if (!unchanged || unchanged.hash !== plan.current.hash || unchanged.updatedAt !== plan.current.updatedAt) {
           throw new Error(`书目“${plan.current.title}”在导入期间已更改，本次写入全部回滚`)
@@ -251,6 +256,7 @@ async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhvie
         const insertFields = ['hash', ...fields, 'createdAt', 'updatedAt']
         await target.run(`INSERT INTO metadata_import.${metadataTable} (${insertFields.map(quoteIdentifier).join(', ')}) VALUES (${insertFields.map(() => '?').join(', ')}) ON CONFLICT("hash") DO UPDATE SET ${[...fields, 'updatedAt'].map(field => quoteIdentifier(field) + ' = excluded.' + quoteIdentifier(field)).join(', ')}`, [plan.current.hash, ...values, now, now])
       }
+      checkCancelled(signal)
       await target.exec('COMMIT')
       transactionOpen = false
       counts.imported = plans.length
@@ -275,7 +281,7 @@ async function importSqliteMetadata({ filename, books, Manga, Metadata, getEhvie
   const firstError = fatalError || failures[0]?.reason
   return {
     success: !fatalError && counts.failed === 0,
-    canceled: false,
+    canceled: !!signal?.aborted,
     partial: counts.imported > 0 && counts.failed > 0,
     counts,
     failures,

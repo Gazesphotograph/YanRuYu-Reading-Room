@@ -83,6 +83,12 @@
 .organizer-table-wrap thead { background: var(--soft-accent, #e0e6da); }
 .organizer-source { border-left: 3px solid var(--green, #315445); padding: 9px 14px; margin: 12px 0; }
 .organizer-source p { font-size: 12px; }
+.organizer-source-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 12px; }
+.organizer-source-grid .organizer-source { min-width: 0; margin: 0; }
+.compare-cover { display: block; width: 100%; height: 140px; object-fit: contain; background: var(--side); margin-bottom: 8px; }
+.organizer-comparison .organizer-selection,
+.organizer-comparison .organizer-editing > :not([data-merge-card]) { display: none; }
+.organizer-comparison .organizer-workspace { display: block; }
 .organizer-source small { font-size: 11px; color: var(--muted, #60685c); overflow-wrap: anywhere; }
 .organizer-warnings { font-size: 12px; color: var(--orange, #95603f); overflow-wrap: anywhere; line-height: 1.7; }
 .organizer-warnings li { margin: 6px 0; }

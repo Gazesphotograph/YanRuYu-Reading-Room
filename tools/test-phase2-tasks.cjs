@@ -12,7 +12,7 @@ const { TaskService } = require('../resources/app/modules/task_service');
 const { mergeBookEdits } = require('../resources/app/modules/library_edits');
 const { sourceSignature } = require('../resources/app/modules/source_signature');
 const { fingerprintBook } = require('../resources/app/modules/library_identity');
-const { serialQueue } = require('../resources/app/modules/safety');
+const { hashFile, serialQueue } = require('../resources/app/modules/safety');
 const { createReadingStateStore } = require('../resources/app/modules/reading_state');
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
@@ -166,6 +166,31 @@ test('a full rebuild cancelled while waiting to commit or during its transaction
   assert.deepEqual((await fs.readdir(f.coverRoot)).sort(), covers);
 });
 
+test('initial scan publishes one durable book before the next cover, preserving edits and the cover across cancellation and retry', async t => {
+  const f = await fixture(t);
+  await f.add('one'); await f.add('two');
+  const controller = new AbortController();
+  let first;
+  const result = await scanLibrary({ ...f.options, signal:controller.signal, onFirstBookReady:async () => {
+    assert.equal(f.coverCalls, 1);
+    assert.equal(await f.Manga.count(), 1);
+    first = await f.Manga.findOne();
+    await fs.access(first.coverPath);
+    await first.update({ title:'Opened during scan', readCount:1 });
+    controller.abort();
+  }});
+  assert.equal(result.added, 1);
+  assert.equal(result.cancelled, true);
+  const retry = await scanLibrary(f.options);
+  assert.equal(retry.count, 2);
+  assert.equal(retry.added, 1);
+  const saved = await f.Manga.findByPk(first.id);
+  assert.equal(saved.title, 'Opened during scan');
+  assert.equal(saved.readCount, 1);
+  assert.equal(saved.coverPath, first.coverPath);
+  await fs.access(saved.coverPath);
+});
+
 test('scan preparation does not hold the write queue and merges concurrent reading and user edits', async t => {
   const f = await fixture(t), entry = await f.add('one'); await scanLibrary(f.options);
   const original = (await f.Manga.findAll())[0]; await fs.writeFile(path.join(entry.filepath, '3.jpg'), 'change');
@@ -209,6 +234,83 @@ test('stale reader saves cannot overwrite a scan result and explicit approved cu
   assert.equal(saved.mark, true); assert.equal(saved.readCount, 9); await fs.access(saved.coverPath);
   const custom = mergeBookEdits(saved, { ...stale, coverPath: 'untrusted-cover' }, { coverPath: 'approved-cover', coverHash: 'approved-hash' });
   assert.equal(custom.coverPath, 'approved-cover'); assert.equal(custom.coverHash, 'approved-hash'); assert.equal(custom.pageCount, 3);
+});
+
+test('refresh, rebuild and both relocation paths retain the current hand-picked cover', async t => {
+  const f = await fixture(t), entry = await f.add('one'); await scanLibrary(f.options);
+  const original = (await f.Manga.findAll())[0].toJSON();
+  const legacy = path.join(f.coverRoot, 'legacy-pick.webp');
+  await fs.writeFile(legacy, 'legacy manually selected WebP');
+  const legacyHash = await hashFile(legacy);
+  await f.Manga.update({ coverPath: legacy, coverHash: legacyHash }, { where: { id: original.id } });
+  await fs.writeFile(path.join(entry.filepath, '3.jpg'), 'neutral appended page');
+  const current = () => f.Manga.findByPk(original.id, { raw: true });
+  const incremental = await scanLibrary(f.options);
+  assert.equal(incremental.updated, 1);
+  assert.equal((await current()).coverPath, legacy);
+  assert.equal((await current()).pageCount, 3);
+  assert.notEqual((await current()).identityFingerprint, original.identityFingerprint);
+  assert.equal(await hashFile(legacy), legacyHash);
+
+  const custom = path.join(f.coverRoot, 'custom-latest.webp');
+  await fs.writeFile(custom, 'new hand-picked cover');
+  const customHash = await hashFile(custom);
+  const rebuilt = await scanLibrary({ ...f.options, rebuild: true, beforeCommit: async () => {
+    await f.Manga.update({ coverPath: custom, coverHash: customHash }, { where: { id: original.id } });
+  } });
+  assert.equal(rebuilt.updated, 1);
+  assert.equal((await current()).coverPath, custom);
+  const folders = (await fs.readdir(f.coverRoot)).sort();
+  const moved = path.join(f.library, 'moved'); await fs.rename(entry.filepath, moved); entry.filepath = moved;
+  assert.equal((await scanLibrary(f.options)).relocated, 1);
+  assert.equal((await current()).coverPath, custom);
+  const relocated = path.join(f.library, 'relocated'); await fs.rename(moved, relocated);
+  const book = await relocateMissingBook({ ...f.options, bookId: original.id, filepath: relocated });
+  assert.equal(book.coverPath, custom);
+  assert.equal(book.coverHash, customHash);
+  assert.equal(await hashFile(custom), customHash);
+  assert.deepEqual((await fs.readdir(f.coverRoot)).sort(), folders, 'Unused generated covers are cleaned up');
+  entry.filepath = relocated;
+  await fs.writeFile(legacy, 'another hand-picked cover');
+  const newerHash = await hashFile(legacy);
+  await f.Manga.update({ exist: false }, { where: { id: original.id } });
+  const available = await scanLibrary({ ...f.options, beforeCommit: async () => {
+    await f.Manga.update({ coverPath: legacy, coverHash: newerHash }, { where: { id: original.id } });
+  } });
+  assert.equal(available.updated, 1);
+  assert.equal(Boolean((await current()).exist), true);
+  assert.equal((await current()).coverPath, legacy);
+  assert.equal((await current()).coverHash, newerHash);
+  await fs.unlink(legacy);
+  const fallback = await scanLibrary({ ...f.options, bookIds: [original.id], forceRefresh: true });
+  assert.deepEqual(fallback.bookResults, [{ bookId: original.id, status: 'refreshed' }]);
+  assert.notEqual((await current()).coverPath, legacy);
+  await fs.access((await current()).coverPath);
+});
+
+test('a targeted refresh reports results for each ID, including sources discovery skipped', async t => {
+  const f = await fixture(t);
+  const [good, excluded, missing, empty, outside] = await Promise.all(['good', 'excluded', 'missing', 'empty', 'outside'].map(name => f.add(name)));
+  await scanLibrary(f.options);
+  const rows = await f.Manga.findAll({ raw: true });
+  const id = entry => rows.find(row => row.filepath === entry.filepath).id;
+  const outsidePath = path.join(f.directory, 'other-library', 'outside');
+  await f.Manga.update({ filepath: outsidePath }, { where: { id: id(outside) } });
+  await fs.rename(missing.filepath, path.join(f.directory, 'parked'));
+  await fs.unlink(path.join(empty.filepath, '1.jpg')); await fs.unlink(path.join(empty.filepath, '2.jpg'));
+  f.entries.splice(0, f.entries.length, good, excluded);
+  const errors = [];
+  const selected = [id(good), id(excluded), id(missing), id(empty), id(outside), 'unknown-id'];
+  const result = await scanLibrary({ ...f.options, forceRefresh: true, bookIds: selected, excludeFile: 'excluded$', onError: error => errors.push(error) });
+  const outcomes = Object.fromEntries(result.bookResults.map(item => [item.bookId, item.status]));
+  assert.deepEqual(outcomes, Object.fromEntries(selected.map((bookId, index) =>
+    [bookId, ['refreshed', 'excluded', 'missing', 'not-discovered', 'outside-library', 'removed'][index]])));
+  assert.equal(result.updated, 1); assert.equal(result.processed, 1); assert.equal(result.failures, 5);
+  assert.deepEqual(new Set(errors.map(error => error.bookId)), new Set(selected.slice(1)));
+  assert.equal((await f.Manga.findByPk(id(missing))).exist, true, 'A one-book refresh does not change discovery or health state');
+  const unavailable = await scanLibrary({ ...f.options, library: path.join(f.directory, 'offline'), forceRefresh: true, bookIds: [id(good)] });
+  assert.equal(unavailable.bookResults[0].status, 'unavailable');
+  assert.equal(unavailable.processed, 0);
 });
 
 test('a file changed while its cover is generated is rejected and leaves no staged cover', async t => {

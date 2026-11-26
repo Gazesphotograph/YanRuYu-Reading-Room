@@ -16,6 +16,10 @@ const { sourceSignature, checkCancelled } = require('./source_signature')
 const JOURNAL_VERSION = 1
 const JOURNAL_NAME = 'library-organizer.json'
 const MAX_JOURNAL_BYTES = 64 * 1024 ** 2
+const MAX_LEGACY_JOURNAL_BYTES = 512 * 1024 ** 2
+// An in-flight operation can still add terminal timestamps, a revision and
+// recovery flags. Long diagnostics have a short fallback in status().
+const COMPLETION_RESERVE_BYTES = 256
 const MAX_BATCH = 2000
 const MAX_REMOVE_MISSING = 100000
 const METADATA_FIELDS = ['title', 'status', 'rating', 'tags', 'title_jpn', 'filecount', 'posted', 'filesize', 'category', 'url', 'mark']
@@ -187,6 +191,54 @@ function validateJournal(document) {
   return document
 }
 
+function serializeOrganizerJournal(document, reserve = 0) {
+  const serialized = JSON.stringify(validateJournal(document))
+  if (Buffer.byteLength(serialized) + reserve > MAX_JOURNAL_BYTES) {
+    const error = new Error('整理历史容量不足（上限 64 MiB），未保存此次变更')
+    error.code = 'ERR_ORGANIZER_JOURNAL_SIZE'
+    throw error
+  }
+  return serialized
+}
+
+// Legacy writers budgeted compact JSON but added indentation afterwards. Strip
+// insignificant whitespace before parsing so a large padded file does not
+// require a correspondingly large string. Never join two scalar tokens.
+async function readLegacyJournalBytes(filename) {
+  const parts = []
+  let quoted = false, escaped = false, gap = false, last = 0, size = 0, inputSize = 0
+  const structural = byte => byte === 123 || byte === 125 || byte === 91 || byte === 93 || byte === 58 || byte === 44
+  for await (const chunk of fs.createReadStream(filename)) {
+    inputSize += chunk.length
+    if (inputSize > MAX_LEGACY_JOURNAL_BYTES) throw new Error('旧整理历史超过 512 MiB 的自动恢复范围，原文件已保留')
+    let used = 0
+    for (const byte of chunk) {
+      if (!quoted && (byte === 32 || byte === 9 || byte === 10 || byte === 13)) { gap = true; continue }
+      if (gap && last && !structural(last) && !structural(byte)) throw new Error('整理历史包含无效 JSON，原文件已保留')
+      gap = false
+      chunk[used++] = byte
+      last = byte
+      if (escaped) escaped = false
+      else if (quoted && byte === 92) escaped = true
+      else if (byte === 34) quoted = !quoted
+    }
+    size += used
+    if (size > MAX_JOURNAL_BYTES) throw new Error('整理历史去除缩进后仍超过 64 MiB，原文件已保留')
+    if (used) parts.push(Buffer.from(chunk.subarray(0, used)))
+  }
+  return Buffer.concat(parts, size)
+}
+
+async function readOrganizerJournal(filename) {
+  const stat = await fs.promises.lstat(filename)
+  if (!stat.isFile() || stat.size > MAX_LEGACY_JOURNAL_BYTES) throw new Error('整理历史类型无效或超过 512 MiB 的自动恢复范围，原文件已保留')
+  const legacy = stat.size > MAX_JOURNAL_BYTES
+  const bytes = legacy ? await readLegacyJournalBytes(filename) : await fs.promises.readFile(filename)
+  const document = JSON.parse(new TextDecoder('utf-8', { fatal:true }).decode(bytes))
+  if (legacy) return { document, serialized: serializeOrganizerJournal(document) }
+  return { document:validateJournal(document), serialized:null }
+}
+
 // Called only by the validated full-backup restore staging code. It rebases the
 // metadata guard and retained cover references without following journal paths.
 // The matching database and covers come from that same backup. Original book
@@ -220,12 +272,11 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
   let state = { schemaVersion: JOURNAL_VERSION, revision: 0, operations: [] }, loaded = false
   const metadataStorage = () => path.resolve(String(getMetadata().sequelize.options.storage))
 
-  async function persist(next) {
+  async function persist(next, reserve = 0) {
     next.revision = state.revision + 1
-    validateJournal(next)
-    if (Buffer.byteLength(JSON.stringify(next)) > MAX_JOURNAL_BYTES) throw new Error('整理历史已达到容量上限，请先保存完整备份；本次操作未提交')
+    const serialized = serializeOrganizerJournal(next, reserve)
     assertLocalPath(storePath, filePath)
-    await write(filePath, next)
+    await write(filePath, next, serialized)
     state = next
   }
 
@@ -233,7 +284,15 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
     const next = clone(state), operation = next.operations.find(item => item.id === id)
     if (!operation) throw new Error('整理操作日志不存在')
     Object.assign(operation, extra, { status: phase, updatedAt: Date.now() })
-    await persist(next)
+    try {
+      await persist(next, phase === 'undoing' ? COMPLETION_RESERVE_BYTES : 0)
+    } catch (error) {
+      if (error.code !== 'ERR_ORGANIZER_JOURNAL_SIZE' || !extra.error) throw error
+      // Detailed diagnostics still reach the caller. Keep rollback durable even
+      // when the underlying database supplies an unexpectedly long message.
+      operation.error = '详见本次整理错误'
+      await persist(next)
+    }
     return operation
   }
 
@@ -247,7 +306,7 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
       // One snapshot also makes large all-selected removals practical. Check
       // every selected row before deleting any row, and never recreate a
       // duplicate path if a later scan has already imported it under a new ID.
-      const rows = (await Manga.findAll()).map(row => clone(plain(row))), byId = new Map(rows.map(row => [row.id, row]))
+      const rows = await removalSnapshots(Manga), byId = new Map(rows.map(row => [row.id, row]))
       const restoringIds = new Set(op.changes.books.map(item => item.id)), occupiedPaths = new Set()
       if (to === 'before') for (const row of rows) {
         if (!restoringIds.has(row.id) && validSourcePath(row.filepath)) occupiedPaths.add(pathKey(row.filepath))
@@ -341,11 +400,13 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
 
   const ready = Promise.resolve(databaseReady).then(() => queue(() => commit(async () => {
     await fs.promises.mkdir(storePath, { recursive: true })
-    try {
-      const stat = await fs.promises.lstat(filePath)
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_JOURNAL_BYTES) throw new Error('书库整理日志文件大小或类型无效')
-      state = validateJournal(JSON.parse(await fs.promises.readFile(filePath, 'utf8')))
-    } catch (error) { if (error.code !== 'ENOENT') throw error }
+    let journal
+    try { journal = await readOrganizerJournal(filePath) }
+    catch (error) { if (error.code !== 'ENOENT') throw error }
+    if (journal) {
+      if (journal.serialized !== null) await write(filePath, journal.document, journal.serialized)
+      state = journal.document
+    }
     loaded = true
     await recoverPending()
   })))
@@ -462,11 +523,25 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
     })
   }
 
+  async function removalSnapshots(Manga) {
+    // SQLite rows written by earlier imports can use a trailing Z. Sequelize's
+    // SQLite DATE reader appends a second timezone unless it sees a plus sign.
+    const dates = ['createdAt', 'updatedAt']
+    const attributes = { exclude: dates, include: dates.map(field => [
+      Manga.sequelize.fn('replace', Manga.sequelize.col(field), 'Z', '+00:00'), field
+    ]) }
+    return (await Manga.findAll({ attributes })).map(row => {
+      const book = { ...plain(row) }
+      for (const field of dates) if (book[field] != null) book[field] = new Date(book[field]).toJSON()
+      return book
+    })
+  }
+
   async function previewRemoveMissing(params = {}) {
     if (!object(params)) throw new Error('请选择要删除的缺失书目记录')
     const ids = idsOf(params.bookIds, { maximum: MAX_REMOVE_MISSING })
     return run(async () => {
-      const books = (await getManga().findAll()).map(row => clone(plain(row))), byId = new Map(books.map(book => [book.id, book]))
+      const books = await removalSnapshots(getManga()), byId = new Map(books.map(book => [book.id, book]))
       const context = await sourceContext(), rows = []
       const op = baseOperation('remove-missing', `删除 ${ids.length} 条缺失或不可访问书目记录`)
       for (const id of ids) {
@@ -637,7 +712,7 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
       if (op.kind !== 'merge' && !Object.values(op.changes).some(entries => entries.length)) return { changed: 0, noChanges: true }
       const next = clone(state)
       next.operations.push(op)
-      await persist(next) // No data is touched until the recovery record is durable.
+      await persist(next, COMPLETION_RESERVE_BYTES)
       try {
         await applyChanges(op, 'before', 'after')
         await status(op.id, 'applied')
@@ -783,4 +858,5 @@ function createLibraryOrganizer({ storePath, getManga, getMetadata, readingState
 }
 
 module.exports = { JOURNAL_VERSION, JOURNAL_NAME, MAX_BATCH, MAX_REMOVE_MISSING, validateJournal, validateOrganizerState: validateJournal,
+  MAX_JOURNAL_BYTES, readOrganizerJournal, serializeOrganizerJournal,
   rebaseOrganizerStateForRestore, tagsOf, createLibraryOrganizer }

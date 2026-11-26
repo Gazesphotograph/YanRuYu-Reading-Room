@@ -162,13 +162,14 @@ class TaskService {
         : record.snapshot.errorCount || result?.failures ? 'completed-with-errors' : 'completed'
       if (result && !Array.isArray(result)) {
         const summary = {}
-        for (const field of ['changed', 'count', 'failures', 'processed', 'added', 'updated', 'unchanged', 'relocated', 'cancelled']) {
+        for (const field of ['changed', 'count', 'failures', 'processed', 'added', 'updated', 'unchanged', 'relocated', 'cancelled', 'imported', 'skipped', 'unmatched']) {
           if (['number', 'boolean'].includes(typeof result[field])) summary[field] = result[field]
         }
+        for (const field of ['previewId', 'bookId']) if (typeof result[field] === 'string') summary[field] = result[field].slice(0, 256)
         record.snapshot.result = summary
       }
       record.snapshot.message = record.snapshot.status === 'cancelled' ? '已取消；已完成的书目保持可用，可以重试继续'
-        : record.snapshot.status === 'completed-with-errors' ? '处理结束，部分项目失败，请查看明细后重试' : '已完成'
+        : record.snapshot.status === 'completed-with-errors' ? '处理结束，有项目未完成，请查看明细后重试' : '已完成'
       if (record.snapshot.status === 'completed') record.snapshot.progress = 1
     } catch (caught) {
       error = caught

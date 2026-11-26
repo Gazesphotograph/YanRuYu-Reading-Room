@@ -328,6 +328,7 @@ class LocalSearchService {
     const ordered = [...results.values()].sort((a, b) => b.score - a.score || compare(a.title, b.title))
     for (const result of ordered) { result.matches.sort((a, b) => b.score - a.score); result.matches = result.matches.slice(0, 3); result.page = result.matches[0]?.page || null }
     return { query, mode, total: ordered.length, results: ordered.slice(0, limit), paused: this.state.indexPaused,
+      ...(payload.workspace === true ? { workspaceMatches: ordered } : {}),
       indexedPages: this.index.size, pendingPages: this.pending().length, method: '本地元数据、别名与 BM25 关键词检索；未使用神经语义模型' }
   }
   async recommend(payload) {

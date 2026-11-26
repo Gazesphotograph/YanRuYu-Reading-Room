@@ -7,7 +7,7 @@
 
   const styles = classic
     ? ['./assets/index-CCnLQEYT.css', './room-themes.css', './manager-themes.css', './manager-glass.css']
-    : ['./room.css', './room-themes.css', './room-scene.css', './room-glass.css', './room-shelves.css', './room-reader-tools.css', './room-personalization.css'];
+    : ['./room.css', './room-themes.css', './room-scene.css', './room-glass.css', './room-shelves.css', './room-reader-tools.css', './room-personalization.css', './room-workspace.css', './room-management.css'];
   for (const href of [...styles, './room-fonts.css']) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';

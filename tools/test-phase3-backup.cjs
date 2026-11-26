@@ -18,7 +18,8 @@ const { createLibraryOrganizer } = require('../resources/app/modules/library_org
 const { createLocalSearchService } = require('../resources/app/modules/local_search')
 const { writeClientState, readClientState } = require('../resources/app/modules/client_state')
 const { fingerprintBook } = require('../resources/app/modules/library_identity')
-const { serialQueue } = require('../resources/app/modules/safety')
+const { scanLibrary } = require('../resources/app/modules/library_scan')
+const { hashFile, serialQueue } = require('../resources/app/modules/safety')
 
 const sha = value => createHash('sha256').update(value).digest('hex')
 const json = async filename => JSON.parse(await fs.readFile(filename, 'utf8'))
@@ -123,7 +124,7 @@ async function storeDigests(store) {
   return values
 }
 function modifiedBackup(source, destination, filename, payload, updateManifest = true) {
-  const zip = new AdmZip(source), bytes = Buffer.from(JSON.stringify(payload))
+  const zip = new AdmZip(source), bytes = Buffer.isBuffer(payload) ? payload : Buffer.from(JSON.stringify(payload))
   zip.updateFile(filename, bytes)
   if (updateManifest) {
     const manifest = JSON.parse(zip.readAsText('manifest.json')), entry = manifest.files.find(file => file.name === filename)
@@ -132,6 +133,28 @@ function modifiedBackup(source, destination, filename, payload, updateManifest =
   }
   zip.writeZip(destination)
 }
+
+test('legacy oversized journals export compactly, and a padded historical backup restores with working undo', async t => {
+  const f = await fixture(t), source = await f.makeStore('source', true), target = await f.makeStore('target', false)
+  const journalName = 'library-organizer.json', origin = path.join(source.storePath, journalName)
+  const journal = await json(origin)
+  const legacy = Buffer.concat([Buffer.alloc(64 * 1024 ** 2, 32), Buffer.from(JSON.stringify(journal, null, 2))])
+  await fs.writeFile(origin, legacy)
+  const modern = path.join(f.root, 'compact.yru-backup'), old = path.join(f.root, 'legacy-indented.yru-backup')
+  await source.backup.createBackup(modern)
+  assert.equal(new AdmZip(modern).readAsText(journalName), JSON.stringify(journal))
+  assert.equal((await fs.stat(origin)).size, legacy.length)
+  modifiedBackup(modern, old, journalName, legacy)
+  const preview = await target.backup.inspectBackup(old)
+  assert.equal(preview.summary.organizerRecords, 1)
+  await target.backup.restoreBackup(old, { expectedDigest:preview.digest })
+  const restored = await fs.readFile(path.join(target.storePath, journalName), 'utf8')
+  assert.equal(restored, JSON.stringify(JSON.parse(restored)))
+  await target.open()
+  await target.organizer.undo(source.applied.id)
+  assert.equal((await target.Manga.findByPk(source.books[1].id)).hiddenBook, false)
+  assert.equal((await target.readingState.load()).progress[source.books[0].id].page, 1)
+})
 
 test('feature backup restores to another data directory and restored applied merge can be undone safely', async t => {
   const f = await fixture(t), source = await f.makeStore('source', true), target = await f.makeStore('target', true)
@@ -170,6 +193,35 @@ test('feature backup restores to another data directory and restored applied mer
   assert.equal((await source.Manga.findByPk(source.books[1].id)).hiddenBook, true, 'Undo in the restored copy does not touch the source database')
   assert.equal((await source.organizer.history())[0].status, 'applied')
   await assertOriginals(originals)
+})
+
+test('a hand-picked cover restored into a different data directory survives a fresh scan', async t => {
+  const f = await fixture(t), source = await f.makeStore('custom-source'), target = await f.makeStore('custom-target')
+  const book = source.books[0], basename = 'custom-picked.webp';
+  const original = path.join(source.storePath, 'cover', basename), restored = path.join(target.storePath, 'cover', basename)
+  await fs.writeFile(original, 'hand-picked cover fixture')
+  const coverHash = await hashFile(original)
+  await source.open()
+  await source.Manga.update({ coverPath: original, coverHash }, { where: { id: book.id } })
+  await source.close()
+  const filename = path.join(f.root, 'custom-cover.yru-backup')
+  await source.backup.createBackup(filename)
+  const preview = await target.backup.inspectBackup(filename)
+  await target.backup.restoreBackup(filename, { expectedDigest: preview.digest })
+  await target.open()
+  const coverRoot = path.join(target.storePath, 'cover'), generated = path.join(coverRoot, 'unused-generated.webp')
+  const result = await scanLibrary({ Manga: target.Manga, library: source.library, coverRoot, bookIds: [book.id], forceRefresh: true,
+    getBookFilelist: async () => [{ filepath: book.filepath, type: book.type }], geneCover: async () => {
+      await fs.writeFile(generated, 'generated cover fixture')
+      return { coverPath: generated, targetFilePath: path.join(book.filepath, '1.jpg'), pageCount: 2, bundleSize: 40, mtime: new Date() }
+    } })
+  assert.deepEqual(result.bookResults, [{ bookId: book.id, status: 'refreshed' }])
+  const record = await target.Manga.findByPk(book.id)
+  assert.equal(record.coverPath, restored)
+  assert.equal(record.coverHash, coverHash)
+  assert.equal(await hashFile(restored), coverHash)
+  assert.equal(await hashFile(original), coverHash)
+  await assert.rejects(fs.stat(generated), { code: 'ENOENT' })
 })
 
 test('a removed record survives full backup into another data directory and can be restored with its identity and archives', async t => {

@@ -18,6 +18,9 @@ export function normalizeShelfQuery(input = {}) {
   const selectedTags = tagKeys(value.selectedTags);
   return {
     search: text(value.search),
+    searchMode: choice(value.searchMode, ['metadata', 'all', 'text'], 'metadata'),
+    folder: text(value.folder, 32767).replaceAll('\\', '/'),
+    classicQuery: text(value.classicQuery),
     filter: choice(value.filter, ['all', 'reading', 'finished', 'unread'], 'all'),
     favorites: value.favorites === true,
     featured: value.featured === true,

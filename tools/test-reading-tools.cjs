@@ -145,7 +145,12 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     const error = await page.evaluate(async () => { try { await window.readingState.flush(); return ''; } catch (error) { return error.message; } });
     assert.match(error, /Synthetic preference disk failure/);
     await page.locator('[data-action="exit-reader"]').click();
-    await page.waitForFunction(() => document.querySelector('#toast')?.textContent.includes('Synthetic preference disk failure') || document.body.innerText.includes('Synthetic preference disk failure'));
+    // Wait for the close action's own rejection before allowing the retry.
+    // The earlier explicit flush can already have reported the same disk error.
+    await page.waitForFunction(() => {
+      const message = document.querySelector('#toast')?.textContent || '';
+      return message.startsWith('操作未完成') && message.includes('Synthetic preference disk failure');
+    });
     assert.equal(await page.locator('.reader').count(), 1, 'A failed preference write must keep the reading dialog available for retry');
     failPreferences = false;await close();
     assert.equal(await page.locator('#room [data-book="reader-a"]').evaluate(element => element === document.activeElement), true);

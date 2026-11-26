@@ -3,6 +3,7 @@
 // Real preload, databases and reader. Every image and data file is synthetic.
 const assert = require('node:assert/strict');
 const os = require('node:os');
+const { randomUUID } = require('node:crypto');
 const { fs, path, root, isWithin, sha256, electronExecutable } = require('./project/common.cjs');
 const { build } = require('./project/build.cjs');
 const { _electron } = require('./playwright-runtime.cjs');
@@ -153,6 +154,23 @@ async function main() {
 
     const recommendation = await call('local-search-command', { action: 'recommend', bookId: a.id });
     assert.ok(recommendation.results.length > 0 && recommendation.results.every(item => item.reasons.length));
+    await close();
+    const journalFile = path.join(data, 'library-organizer.json');
+    const legacyBytes = writeLargeLegacyHistory(journalFile);
+    await launch();
+    const oldMark = (await call('load-book-list', false)).find(book => book.id === a.id).mark;
+    const batch = await call('organizer-preview-batch', { bookIds:[a.id], fields:{ mark:!oldMark } });
+    const appliedBatch = await call('organizer-apply', batch.token);
+    const compactBytes = fs.statSync(journalFile).size;
+    assert(compactBytes < 64 * 1024 ** 2);
+    await close(); await launch();
+    await call('organizer-undo', appliedBatch.id);
+    const history = await call('organizer-history');
+    assert.equal(history.filter(op => op.title === 'Legacy batch fixture').length, 180);
+    assert.equal(history.find(op => op.id === appliedBatch.id).status, 'undone');
+    assert.equal((await call('load-book-list', false)).find(book => book.id === a.id).mark, oldMark);
+    assert.equal((await call('load-reading-state')).progress[a.id].page, 2);
+    pass(`Legacy history (${(legacyBytes / 2**20).toFixed(2)} MiB) reopens, compacts to ${(compactBytes / 2**20).toFixed(2)} MiB with a new edit, and retains all 180 fixture batches and undo after restart`);
     for (const [filename, hash] of originals) assert.equal(sha256(filename), hash);
     assert.deepEqual(errors, []);
     pass('Health checks and explained recommendations work with real data, with all 12 source images unchanged and no renderer errors');
@@ -163,5 +181,17 @@ async function main() {
     if (!isWithin(os.tmpdir(), workspace) || !path.basename(workspace).startsWith('yanruyu-phase3-desktop-')) throw new Error('Unexpected test workspace.');
     fs.rmSync(workspace, { recursive: true, force: true });
   }
+}
+function writeLargeLegacyHistory(filename) {
+  const journal = JSON.parse(fs.readFileSync(filename, 'utf8'));
+  const books = Array.from({ length:2000 }, (_, n) => ({ id:'fixture-'+n, before:{ mark:true }, after:{ mark:false } }));
+  for (let n = 0; n < 180; n++) {
+    journal.operations.push({ id:randomUUID(), kind:'batch', title:'Legacy batch fixture', status:'undone', createdAt:n,
+      metadataStorage:path.join(path.dirname(filename), 'metadata.sqlite'), changes:{ books, metadata:[], progress:[], collections:[] } });
+  }
+  fs.writeFileSync(filename, JSON.stringify(journal, null, 2) + '\n');
+  const size = fs.statSync(filename).size;
+  assert(size > 64 * 1024 ** 2);
+  return size;
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

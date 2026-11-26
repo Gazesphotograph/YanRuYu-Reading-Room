@@ -12,6 +12,11 @@ function normalize(value) {
     offset: Number.isFinite(value.offset) ? Math.max(0, Math.min(.99, value.offset)) : 0,
     time: Number.isFinite(value.time) ? value.time : Date.now(), source: value.source || 'room' };
 }
+function normalizeVisit(value) {
+  if (!value || !Number.isFinite(value.time) || value.time < 0 || value.time > 8640000000000000 ||
+      !['room','classic','comicread','external','migration'].includes(value.source)) throw new Error('阅读记录无效');
+  return { time:value.time, source:value.source };
+}
 
 export class ReadingProfile {
   constructor(snapshot) {
@@ -22,15 +27,23 @@ export class ReadingProfile {
     for (const [id, value] of Object.entries(snapshot.preferences || {})) if (validId(id)) this.preferences[id] = normalizeReaderPreferences(value);
     this.pending = new Map();
     this.pendingPreferences = new Map();
+    this.visits = Object.assign(Object.create(null), snapshot.visits || {});
+    this.pendingVisits = new Map();
     this.timer = 0;
     this.flushing = null;
     this.classicReader = null;
     this.roomReader = null;
     this.comic = null;
+    this.classicSession = null;
     this.mirror();
     // Periodic capture reduces unsaved work. The main process additionally
     // awaits flush before native close or quit; pagehide alone is not durable.
     this.captureTimer = setInterval(() => { this.captureClassic(); this.captureComicReader(); }, 400);
+    try {
+      window.ipcRenderer.on('reading-visit-saved', (_event, payload) => {
+        if (validId(payload?.bookId)) this.acceptVisit(payload.bookId, payload.visit);
+      });
+    } catch { /* Older preload versions still receive the invoke acknowledgement. */ }
     window.addEventListener('pagehide', () => this.flush().catch(error => this.report(error)));
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.flush().catch(error => this.report(error)); });
   }
@@ -53,9 +66,47 @@ export class ReadingProfile {
     const next = normalize(value);
     this.progress[id] = next;
     this.pending.set(id, next);
+    this.visits[id] = { time: next.time, source: next.source };
     this.mirror();
     if (!this.timer) this.timer = setTimeout(() => { this.timer = 0; this.flush().catch(error => this.report(error)); }, 160);
     return next;
+  }
+  stageVisit(id, value) {
+    if (!validId(id)) throw new Error('书籍 ID 无效');
+    const next = normalizeVisit(value);
+    if (this.visits[id]?.time > next.time) return this.visits[id];
+    this.visits[id] = next;
+    this.pendingVisits.set(id, next);
+    this.mirror();
+    this.notifyVisit(id);
+    if (!this.timer) this.timer = setTimeout(() => { this.timer = 0; this.flush().catch(error => this.report(error)); }, 160);
+    return next;
+  }
+  acceptVisit(id, value) {
+    if (!validId(id)) throw new Error('书籍 ID 无效');
+    const next = normalizeVisit(value), pending = this.pendingVisits.get(id);
+    if (pending && pending.time <= next.time) this.pendingVisits.delete(id);
+    if (!this.visits[id] || this.visits[id].time <= next.time) this.visits[id] = next;
+    this.mirror();
+    this.notifyVisit(id);
+  }
+  notifyVisit(id) { window.dispatchEvent(new CustomEvent('reading-visits-updated', { detail:{bookId:id} })); }
+  async visit(id, source = 'external') {
+    this.stageVisit(id, { time:Date.now(), source });
+    await this.flush({ capture: false });
+  }
+  async refresh() {
+    await this.flush({ capture: false });
+    const snapshot = await invoke('load-reading-state');
+    if (!snapshot || snapshot.schemaVersion !== 1 || snapshot.pageBase !== 1) throw new Error('无法载入最新阅读档案');
+    // Preserve the shared objects held by the workspace and any progress staged
+    // while this IPC was pending. Organizer undo can also remove a record.
+    for (const [target, saved, pending] of [[this.progress, snapshot.progress || {}, this.pending],
+      [this.preferences, snapshot.preferences || {}, this.pendingPreferences], [this.visits, snapshot.visits || {}, this.pendingVisits]]) {
+      for (const id of Object.keys(target)) if (!Object.hasOwn(saved, id) && !pending.has(id)) delete target[id];
+      for (const [id, value] of Object.entries(saved)) if (validId(id) && !pending.has(id)) target[id] = value;
+    }
+    this.mirror();
   }
   async flush({ capture = true } = {}) {
     if (capture) {
@@ -66,7 +117,7 @@ export class ReadingProfile {
     clearTimeout(this.timer); this.timer = 0;
     if (this.flushing) return this.flushing;
     this.flushing = (async () => {
-      while (this.pending.size || this.pendingPreferences.size) {
+      while (this.pending.size || this.pendingPreferences.size || this.pendingVisits.size) {
         if (this.pending.size) {
           const [id, value] = this.pending.entries().next().value;
           const saved = await invoke('save-reading-progress', id, value);
@@ -78,6 +129,12 @@ export class ReadingProfile {
           const saved = await invoke('save-reading-preferences', id, value);
           if (!saved || !['paged', 'double', 'continuous'].includes(saved.mode)) throw new Error('阅读偏好未获得保存确认，请重试');
           if (this.pendingPreferences.get(id) === value) this.pendingPreferences.delete(id);
+        }
+        if (this.pendingVisits.size) {
+          const [id, value] = this.pendingVisits.entries().next().value;
+          const saved = await invoke('save-reading-visit', id, value);
+          if (!saved || !Number.isFinite(saved.time)) throw new Error('阅读记录未获得保存确认，请重试');
+          if (this.pendingVisits.get(id) === value) this.acceptVisit(id, saved);
         }
       }
     })();
@@ -96,33 +153,47 @@ export class ReadingProfile {
     try {
       localStorage.setItem('room-progress', JSON.stringify(this.progress));
       localStorage.setItem('viewerReadingProgress', JSON.stringify(this.classicEntries()));
-      localStorage.setItem('recentRead', JSON.stringify(Object.entries(this.progress).filter(([, value]) => value.time > 0)
+      const visits = { ...this.visits };
+      for (const [id, value] of Object.entries(this.progress)) if (!visits[id] || visits[id].time < value.time) visits[id] = value;
+      localStorage.setItem('recentRead', JSON.stringify(Object.entries(visits).filter(([, value]) => value.time > 0)
         .sort((a, b) => a[1].time - b[1].time).slice(-100).map(([id, value]) => ({ id, read_time: Math.floor(value.time / 1000) }))));
     } catch (error) { console.warn('Reading state cache unavailable; the main-process profile remains authoritative.', error); }
   }
-  saveClassic(book, pageId, { total = book?.pageCount || book?.filecount, offset = 0, visiblePageIds = [], force = false } = {}) {
+  saveClassic(book, pageId, { total = book?.pageCount || book?.filecount, offset = 0, visiblePageIds = [], force = false, mode } = {}) {
     if (!book || typeof pageId !== 'string' || !pageId.startsWith(book.id + '_')) return;
     const suffix = pageId.slice(book.id.length + 1);
     if (!/^[1-9]\d*$/.test(suffix)) return;
     let page = Number(suffix);
     total = Number(total);
     if (!Number.isSafeInteger(total) || total < 1 || page > total) return;
+    if (this.classicSession?.id === book.id && !this.classicSession.visited) {
+      this.classicSession.visited = true;
+      this.stageVisit(book.id, { time:Date.now(), source:'classic' });
+    }
+    if (['paged','double','continuous'].includes(mode)) {
+      const preferences=this.getPreferences(book.id);
+      if(preferences.mode!==mode)this.stagePreferences(book.id,{...preferences,mode});
+    }
     const old = this.progress[book.id];
     if (old && Array.isArray(visiblePageIds) && visiblePageIds.includes(`${book.id}_${old.page}`)) page = old.page;
     if (!force && old?.page === page && old?.total === total && Math.abs((old.offset || 0) - offset) < .01) return;
     this.stage(book.id, { page, total, offset, time: Date.now(), source: 'classic' });
   }
   registerClassicReader(reader) { this.classicReader = reader; }
+  beginClassicSession(id) { this.classicSession = { id, visited:false }; }
   registerRoomReader(reader) { this.roomReader = reader; }
   captureClassic({ throwOnError = false } = {}) {
     try {
       const current = this.classicReader?.();
-      if (current?.ready) this.saveClassic(current.book, current.pageId, current);
+      if (current?.ready) {
+        if (!this.classicSession || this.classicSession.id !== current.book.id) this.beginClassicSession(current.book.id);
+        this.saveClassic(current.book, current.pageId, current);
+      } else if (this.classicSession?.visited) this.classicSession = null;
     } catch (error) { if (throwOnError) throw error; this.report(error); }
   }
   attachComicReader(reader, book) {
     if (this.comic?.reader === reader && this.comic.book.id === book.id) return;
-    this.comic = { reader, book, target: Math.max(0, (this.progress[book.id]?.page || 1) - 1), ready: false, restoring: false };
+    this.comic = { reader, book, target: Math.max(0, (this.progress[book.id]?.page || 1) - 1), ready: false, restoring: false, visited:false };
     this.captureComicReader();
   }
   captureComicReader({ throwOnError = false } = {}) {
@@ -147,6 +218,10 @@ export class ReadingProfile {
       let page = visiblePages?.find(index => Number.isInteger(index) && index >= 0);
       const total = Number(reader.props?.imgList?.length || book.pageCount || book.filecount);
       if (!Number.isInteger(page) || !Number.isSafeInteger(total) || total < 1) return;
+      if (!current.visited) {
+        current.visited = true;
+        this.stageVisit(book.id, { time:Date.now(), source:'comicread' });
+      }
       const old = this.progress[book.id];
       if (old && visiblePages.includes(old.page - 1)) page = old.page - 1;
       if (old?.page === page + 1 && old?.total === total) return;

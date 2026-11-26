@@ -8,8 +8,8 @@ const sqlite3 = require('sqlite3')
 const { open } = require('sqlite')
 const { safeEntry } = require('./safety')
 const { validateClientState } = require('./client_state')
-const { validateState: validateReadingState } = require('./reading_state')
-const { validateOrganizerState, rebaseOrganizerStateForRestore } = require('./library_organizer')
+const { validateState: validateReadingState, writeAtomic } = require('./reading_state')
+const { JOURNAL_NAME, readOrganizerJournal, serializeOrganizerJournal, validateOrganizerState, rebaseOrganizerStateForRestore } = require('./library_organizer')
 const { validateLocalSearchState } = require('./local_search')
 const { SIDECARS, assertLocalPath, controlPath, createStage, removeWork,
   writeDurable, commitPreparedRestore } = require('./restore_transaction')
@@ -60,7 +60,7 @@ function validateJSON(name, value) {
     if (value.migrationSnapshots !== undefined && !Array.isArray(value.migrationSnapshots)) throw new Error('备份的阅读迁移副本无效')
   } else if (name === 'ui-state.json') {
     validateClientState(value)
-  } else if (name === 'library-organizer.json') {
+  } else if (name === JOURNAL_NAME) {
     validateOrganizerState(value)
   } else if (name === 'local-search.json') {
     validateLocalSearchState(value)
@@ -119,7 +119,8 @@ async function verifyPayload(stageRoot, manifest) {
   const values = {}
   for (const name of [...REQUIRED_FILES.filter(name => name.endsWith('.json')), ...OPTIONAL_FILES]) {
     if (OPTIONAL_FILES.has(name) && !fs.existsSync(path.join(stageRoot, name))) continue
-    values[name] = validateJSON(name, readJSON(path.join(stageRoot, name)))
+    const filename = path.join(stageRoot, name)
+    values[name] = name === JOURNAL_NAME ? (await readOrganizerJournal(filename)).document : validateJSON(name, readJSON(filename))
   }
   const books = await inspectSQLite(path.join(stageRoot, 'database.sqlite'), 'library')
   const metadata = await inspectSQLite(path.join(stageRoot, 'metadata.sqlite'), 'metadata')
@@ -165,11 +166,11 @@ class BackupService {
       if (fs.existsSync(windowPath)) jsonFiles['window-state.json'] = readJSON(windowPath)
       for (const name of FEATURE_FILES) {
         const featurePath = path.join(this.storePath, name)
-        if (fs.existsSync(featurePath)) jsonFiles[name] = readJSON(featurePath)
+        if (fs.existsSync(featurePath)) jsonFiles[name] = name === JOURNAL_NAME ? (await readOrganizerJournal(featurePath)).document : readJSON(featurePath)
       }
       for (const [name, value] of Object.entries(jsonFiles)) {
-        validateJSON(name, value)
-        fs.writeFileSync(path.join(stageRoot, name), JSON.stringify(value, null, 2))
+        const serialized = name === JOURNAL_NAME ? serializeOrganizerJournal(value) : JSON.stringify(validateJSON(name, value), null, 2)
+        fs.writeFileSync(path.join(stageRoot, name), serialized)
       }
       const names = [...REQUIRED_FILES, ...OPTIONAL_FILES].filter(name => !OPTIONAL_FILES.has(name) || Object.hasOwn(jsonFiles, name))
       const coverRoot = path.join(this.storePath, 'cover')
@@ -306,7 +307,7 @@ class BackupService {
       writeDurable(path.join(stageRoot, 'ui-state.json'), client)
       if (prepared.values['library-organizer.json']) {
         const journal = rebaseOrganizerStateForRestore(prepared.values['library-organizer.json'], path.join(this.storePath, 'metadata.sqlite'))
-        writeDurable(path.join(stageRoot, 'library-organizer.json'), journal)
+        await writeAtomic(path.join(stageRoot, JOURNAL_NAME), journal, serializeOrganizerJournal(journal))
       }
       const db = await sqliteDatabase(path.join(stageRoot, 'database.sqlite'), false)
       try {

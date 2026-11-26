@@ -85,22 +85,41 @@ $exeDigest = [YanruyuAllocatedSize]::Hash($executablePath)
 $compactedCount = 0
 if (!$MeasureOnly) {
   $compactProgram = Join-Path $env:WINDIR 'System32\compact.exe'
+  function Invoke-RuntimeCompression([string[]]$RuntimePaths) {
+    $runtimeProcessInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $runtimeProcessInfo.FileName = $compactProgram
+    $runtimeProcessInfo.UseShellExecute = $false
+    $runtimeProcessInfo.CreateNoWindow = $true
+    $runtimeProcessInfo.RedirectStandardOutput = $true
+    $runtimeProcessInfo.RedirectStandardError = $true
+    $runtimeQuotedPaths = $RuntimePaths | ForEach-Object { '"' + $_ + '"' }
+    $runtimeProcessInfo.Arguments = '/C /A /I /EXE:LZX ' + ($runtimeQuotedPaths -join ' ')
+    $runtimeProcess = [System.Diagnostics.Process]::new()
+    $runtimeProcess.StartInfo = $runtimeProcessInfo
+    try {
+      [void]$runtimeProcess.Start()
+      $runtimeOutputTask = $runtimeProcess.StandardOutput.ReadToEndAsync()
+      $runtimeErrorTask = $runtimeProcess.StandardError.ReadToEndAsync()
+      $runtimeProcess.WaitForExit()
+      [void]$runtimeOutputTask.GetAwaiter().GetResult()
+      $runtimeCompressionError = $runtimeErrorTask.GetAwaiter().GetResult()
+      if ($runtimeProcess.ExitCode -ne 0) { throw ('Windows executable compression did not finish successfully. ' + $runtimeCompressionError) }
+    } finally { $runtimeProcess.Dispose() }
+  }
   $compactBatch = [System.Collections.Generic.List[string]]::new()
   $compactBatchLength = 0
   foreach ($runtimeFile in $runtimeFiles) {
     # Small files gain little from executable compression and add filesystem overhead.
     if ($runtimeFile.Length -lt 65536) { continue }
     if ($compactBatchLength + $runtimeFile.FullName.Length -gt 18000) {
-      & $compactProgram /C /A /I /EXE:LZX $compactBatch.ToArray() | Out-Null
-      if ($LASTEXITCODE -ne 0) { throw 'Windows executable compression did not finish successfully.' }
+      Invoke-RuntimeCompression $compactBatch.ToArray()
       $compactedCount += $compactBatch.Count
       $compactBatch.Clear(); $compactBatchLength = 0
     }
     $compactBatch.Add($runtimeFile.FullName); $compactBatchLength += $runtimeFile.FullName.Length + 3
   }
   if ($compactBatch.Count) {
-    & $compactProgram /C /A /I /EXE:LZX $compactBatch.ToArray() | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Windows executable compression did not finish successfully.' }
+    Invoke-RuntimeCompression $compactBatch.ToArray()
     $compactedCount += $compactBatch.Count
   }
 }

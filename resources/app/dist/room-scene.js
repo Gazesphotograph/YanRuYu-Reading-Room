@@ -1,3 +1,5 @@
+import { bindBookTitles } from './room-book-titles.js';
+export { bindBookTitles };
 import * as THREE from './vendor/three.module.min.js';
 import { RoundedBoxGeometry } from './vendor/RoundedBoxGeometry.js';
 import { DEFAULT_COVER_ASPECT, bookRowLayout } from './room-book-layout.js';
@@ -21,85 +23,6 @@ const PALETTES = {
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const CAMERA_LIMITS = { yaw:.29, panX:1.8, panY:1.15, zoomMin:.72, zoomMax:1.9 };
-let titleHintId=0;
-
-// One content-sized tooltip per view keeps complete titles outside clipping and
-// perspective containers. The returned disposer also supports update() / hide().
-export function bindBookTitles(root) {
-  if(!root)return Object.assign(()=>{},{update:()=>{},hide:()=>{}});
-  const abort=new AbortController(),signal=abort.signal,nativeTitles=new Map();
-  const tooltip=document.createElement('div');tooltip.className='book-title-tooltip scene-book-label';
-  tooltip.id=`book-title-tooltip-${++titleHintId}`;tooltip.setAttribute('role','tooltip');tooltip.hidden=true;
-  document.body.append(tooltip);
-  let active=null,hovered=null,focused=null,overHint=false,hideTimer=0,frame=0;
-  const removeNativeTitle=button=>{
-    if(button.hasAttribute('title')){nativeTitles.set(button,button.getAttribute('title'));button.removeAttribute('title');}
-  };
-  root.querySelectorAll('[data-book]').forEach(removeNativeTitle);
-  const bookFrom=target=>{
-    const button=target instanceof Element?target.closest('[data-book]'):null;
-    return button&&root.contains(button)?button:null;
-  };
-  const describe=(button,add)=>{
-    if(!button)return;
-    const ids=(button.getAttribute('aria-describedby')||'').split(/\s+/).filter(id=>id&&id!==tooltip.id);
-    if(add)ids.push(tooltip.id);
-    if(ids.length)button.setAttribute('aria-describedby',ids.join(' '));else button.removeAttribute('aria-describedby');
-  };
-  const hide=()=>{
-    clearTimeout(hideTimer);cancelAnimationFrame(frame);frame=0;
-    describe(active,false);active=null;tooltip.hidden=true;overHint=false;
-  };
-  const position=()=>{
-    frame=0;
-    if(!active)return;
-    if(!active.isConnected||active.closest('[inert]')){hide();return;}
-    const rect=active.getBoundingClientRect(),view=window.visualViewport;
-    const width=view?.width||document.documentElement.clientWidth,height=view?.height||document.documentElement.clientHeight;
-    const x=view?.offsetLeft||0,y=view?.offsetTop||0,margin=12,gap=11;
-    if(rect.bottom<y||rect.top>y+height||rect.right<x||rect.left>x+width){hide();return;}
-    tooltip.style.maxWidth=`${Math.max(1,Math.min(680,width-margin*2))}px`;
-    tooltip.style.maxHeight=`${Math.max(1,height-margin*2)}px`;
-    const size=tooltip.getBoundingClientRect();
-    const left=clamp(rect.left+rect.width/2-size.width/2,x+margin,Math.max(x+margin,x+width-margin-size.width));
-    const below=rect.bottom+gap,above=rect.top-gap-size.height;
-    const top=below+size.height<=y+height-margin?below:above>=y+margin?above:clamp(below,y+margin,Math.max(y+margin,y+height-margin-size.height));
-    tooltip.style.left=`${Math.round(left)}px`;tooltip.style.top=`${Math.round(top)}px`;
-    tooltip.dataset.placement=top<rect.top?'above':'below';
-  };
-  const update=()=>{if(active&&!frame)frame=requestAnimationFrame(position);};
-  const show=button=>{
-    if(!button||button.closest('[inert]')){hide();return;}
-    clearTimeout(hideTimer);removeNativeTitle(button);
-    if(active!==button){
-      describe(active,false);active=button;
-      const title=button.dataset.bookTitle||button.closest('.book-slot')?.querySelector('.book-label')?.textContent||nativeTitles.get(button)||button.getAttribute('aria-label')||'';
-      tooltip.replaceChildren();
-      const text=document.createElement('span');text.textContent=title;tooltip.append(text);
-      tooltip.dataset.book=button.dataset.book;describe(button,true);
-    }
-    tooltip.hidden=false;position();
-  };
-  const reconcile=()=>{
-    clearTimeout(hideTimer);
-    hideTimer=setTimeout(()=>{if(overHint)return;const button=hovered||focused;if(button)show(button);else hide();},100);
-  };
-  root.addEventListener('pointerover',e=>{if(e.pointerType==='touch')return;const button=bookFrom(e.target);if(button){hovered=button;show(button);}},{signal});
-  root.addEventListener('pointerout',e=>{const button=bookFrom(e.target);if(!button||button.contains(e.relatedTarget))return;if(hovered===button)hovered=null;reconcile();},{signal});
-  root.addEventListener('focusin',e=>{focused=bookFrom(e.target);if(focused)show(focused);},{signal});
-  root.addEventListener('focusout',e=>{const button=bookFrom(e.target);if(button&&!button.contains(e.relatedTarget)){focused=null;reconcile();}},{signal});
-  root.addEventListener('click',()=>{hovered=null;focused=null;hide();},{signal});
-  root.addEventListener('pointerdown',e=>{if(e.button===1){hovered=null;hide();}},{signal});
-  tooltip.addEventListener('pointerenter',()=>{overHint=true;clearTimeout(hideTimer);},{signal});
-  tooltip.addEventListener('pointerleave',()=>{overHint=false;reconcile();},{signal});
-  window.addEventListener('resize',update,{signal});window.addEventListener('scroll',update,{signal,capture:true});
-  window.visualViewport?.addEventListener('resize',update,{signal});window.visualViewport?.addEventListener('scroll',update,{signal});
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'){hovered=null;focused=null;hide();}},{signal});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)hide();},{signal});
-  const dispose=()=>{abort.abort();hide();tooltip.remove();nativeTitles.forEach((title,button)=>{if(!button.hasAttribute('title'))button.setAttribute('title',title);});};
-  return Object.assign(dispose,{update,hide});
-}
-
 function canvasTexture(width, height, paint) {
   const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
   paint(canvas.getContext('2d'), width, height);
@@ -174,7 +97,7 @@ function placeholderTexture(book,index) {
 }
 
 export class RoomScene {
-  constructor(element,{quality='balanced',personalization}={}) {
+  constructor(element,{quality='balanced',personalization,embedded=false}={}) {
     this.element=element;this.books=[];this.items=[];this.theme='paper';this.version=0;this.capacity=6;
     this.personalization=normalizeRoomOptions(personalization);this.personalizationTheme=null;this.cabinets=[];this.furniture={};this.anchoredProps=[];
     this.quality=normalizeQuality(quality);this.qualityPreset=getQualityPreset(this.quality);this.roomBuilds=0;this.bookUpdates=0;
@@ -185,7 +108,9 @@ export class RoomScene {
     this.cameraTarget=new THREE.Vector3();this.cameraOffset=new THREE.Vector3();this.cameraUp=new THREE.Vector3();
     this.projectionPoint=new THREE.Vector3();this.projectionPosition=new THREE.Vector3();this.projectionMatrix=new THREE.Matrix4();
     this.reduced=matchMedia('(prefers-reduced-motion: reduce)');
-    element.innerHTML=`<div class="scene-topline"><span class="scene-edition">YAN RU YU <i></i> PRIVATE COLLECTION</span><span class="scene-material">胡桃木 · 日光</span></div><div class="scene-surface"><div class="scene-book-layer" role="group" aria-label="立体书架上的藏书"></div></div><div class="scene-bottomline"><span class="scene-caption">书中自有颜如玉</span><div class="scene-controls" role="group" aria-label="书架视角"><span class="scene-drag-hint">左键环顾 · 中键拖动 · 滚轮缩放</span><button type="button" data-scene-camera="left" aria-label="向左查看书架" title="向左查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><button type="button" data-scene-camera="reset" aria-label="恢复书架视角、位置和缩放" title="恢复视角、位置和缩放"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 5v8l-8 5-8-5V8l8-5ZM4 8l8 5 8-5m-8 5v8m0-18v10"/></svg></button><button type="button" data-scene-camera="right" aria-label="向右查看书架" title="向右查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div></div>`;
+    const edition = embedded ? '' : '<span class="scene-edition">YAN RU YU <i></i> PRIVATE COLLECTION</span>';
+    const caption = embedded ? '' : '<span class="scene-caption">书中自有颜如玉</span>';
+    element.innerHTML=`<div class="scene-topline">${edition}<span class="scene-material">胡桃木 · 日光</span></div><div class="scene-surface"><div class="scene-book-layer" role="group" aria-label="立体书架上的藏书"></div></div><div class="scene-bottomline">${caption}<div class="scene-controls" role="group" aria-label="书架视角"><span class="scene-drag-hint">左键环顾 · 中键拖动 · 滚轮缩放</span><button type="button" data-scene-camera="left" aria-label="向左查看书架" title="向左查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><button type="button" data-scene-camera="reset" aria-label="恢复书架视角、位置和缩放" title="恢复视角、位置和缩放"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 5v8l-8 5-8-5V8l8-5ZM4 8l8 5 8-5m-8 5v8m0-18v10"/></svg></button><button type="button" data-scene-camera="right" aria-label="向右查看书架" title="向右查看"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div></div>`;
     this.surface=element.querySelector('.scene-surface');this.layer=element.querySelector('.scene-book-layer');
     try {
       this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'low-power'});
@@ -286,6 +211,16 @@ export class RoomScene {
     const pose=normalizeRoomCamera(value);
     this.yaw=this.targetYaw=pose.yaw;this.panX=this.targetPanX=pose.panX;this.panY=this.targetPanY=pose.panY;this.zoom=this.targetZoom=pose.zoom;
     this.cameraDirty=true;this.requestCameraUpdate();
+  }
+  locateBook(id) {
+    const item = this.items.find(candidate => candidate.button.dataset.book === id);
+    if (!item || !this.camera || !this.bounds) return;
+    const center = item.group.localToWorld(new THREE.Vector3(0, item.modelHeight / 2, 0));
+    center.sub(new THREE.Vector3(this.bounds.targetX, this.bounds.targetY, .12));
+    const pose = this.getCameraPose();
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1);
+    this.setCameraPose({ ...pose, zoom: Math.min(pose.zoom, 1), panX: center.dot(right) * .45, panY: center.dot(up) * .45 });
   }
   setPersonalization(value,{restoreCamera=false}={}) {
     const next=normalizeRoomOptions(value),themeChanged=this.personalizationTheme!==this.theme;
@@ -717,8 +652,16 @@ export class RoomScene {
     this.failed=true;++this.version;cancelAnimationFrame(this.frame);this.frame=0;this.cancelCameraDrag?.();
     this.element.dataset.sceneState='fallback';this.element.dataset.sceneTheme=this.theme;this.element.classList.remove('scene-tall');
     this.element.querySelector('.scene-material').textContent='兼容视图';
-    this.element.querySelector('.scene-caption').textContent='当前设备使用封面视图，阅读功能正常可用。';
+    let caption = this.element.querySelector('.scene-caption');
+    if (!caption) {
+      caption = document.createElement('span');
+      caption.className = 'scene-caption';
+      caption.setAttribute('role', 'status');
+      this.element.querySelector('.scene-bottomline').prepend(caption);
+    }
+    caption.textContent='当前设备使用封面视图，阅读功能正常可用。';
     this.surface.innerHTML=`<div class="book-grid scene-fallback-grid">${this.books.map(book=>`<div class="book-slot"><button class="book" data-book="${escapeHTML(book.id)}" aria-label="${escapeHTML(book.title)}"><span class="book-face">${book.cover?`<img src="${escapeHTML(book.cover)}" alt="" loading="lazy">`:''}<span class="fallback">${escapeHTML(book.title)}</span></span></button><span class="book-label">${escapeHTML(book.title)}</span></div>`).join('')}</div>`;
+    if (this.selectedBook) this.surface.querySelector(`[data-book="${CSS.escape(this.selectedBook)}"]`)?.setAttribute('data-selected', '');
     this.element.querySelector('.scene-controls').hidden=true;
     this.renderer?.dispose();this.renderer=null;this.disposeWorld();
     this.coverCache.forEach(texture=>texture.dispose());this.coverCache.clear();

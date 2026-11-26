@@ -9,7 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { migrateLegacyProgress, normalizeProgress, normalizePreferences } = require('../resources/app/modules/reading_state');
+const { migrateLegacyProgress, migrateLegacyVisits, normalizeProgress, normalizePreferences, normalizeVisit } = require('../resources/app/modules/reading_state');
 
 const base = path.resolve(__dirname, '..');
 const appURL = pathToFileURL(path.join(base, 'resources', 'app', 'dist', 'index.html')).href;
@@ -75,6 +75,7 @@ function createFakeModel(books, pages) {
       if (channel === 'migrate-reading-state') {
         if (!this.readingState.migrations.legacyV1) {
           this.readingState.progress = migrateLegacyProgress(args[0], this.books, this.readingState.progress).progress;
+          this.readingState.visits = migrateLegacyVisits(args[0], this.readingState.visits);
           this.readingState.migrations.legacyV1 = { migratedAt: Date.now() };
         }
         return clone(this.readingState);
@@ -82,7 +83,13 @@ function createFakeModel(books, pages) {
       if (channel === 'save-reading-progress') {
         assert(this.books.some(book => book.id === args[0]), 'The UI attempted to save progress outside the fake library');
         const progress = normalizeProgress(args[1]); this.readingState.progress[args[0]] = progress;
+        this.readingState.visits ||= {}; this.readingState.visits[args[0]] = { time: progress.time, source: progress.source || 'room' };
         this.readingState.revision++; return clone(progress);
+      }
+      if (channel === 'save-reading-visit') {
+        assert(this.books.some(book => book.id === args[0]), 'Visits must belong to the fake library');
+        const visit = normalizeVisit(args[1]); this.readingState.visits ||= {}; this.readingState.visits[args[0]] = visit;
+        this.readingState.revision++; return clone(visit);
       }
       if (channel === 'save-reading-preferences') {
         assert(this.books.some(book => book.id === args[0]), 'Preferences must belong to the fake library');
@@ -99,6 +106,12 @@ function createFakeModel(books, pages) {
       if (channel === 'load-book-list') return clone(this.books);
       if (channel === 'load-collection-list') return clone(this.collections);
       if (channel === 'task-list') return clone(this.tasks);
+      if (channel === 'task-start' && ['scan', 'metadata'].includes(args[0])) {
+        const task = { id:'fixture-task-' + this.calls.length, kind:args[0], title:'模拟书库刷新', status:'completed',
+          message:'已完成', createdAt:Date.now(), canCancel:false, canRetry:false, result:{changed:true} };
+        this.tasks.unshift(task);
+        return { ...clone(task), fixtureTasks:clone(this.tasks) };
+      }
       if (channel === 'image-cache-status') return {budgetBytes:2147483648,usedBytes:0,protectedBytes:0,entryCount:0,activeEntries:0,freeBytes:107374182400,minFreeBytes:268435456};
       if (channel === 'image-cache-clear') return {budgetBytes:2147483648,usedBytes:0,protectedBytes:0,entryCount:0,activeEntries:0,freeBytes:107374182400,minFreeBytes:268435456,removedEntries:0,removedBytes:0};
       if (channel === 'image-cache-budget') {this.setting.imageCacheBudgetMB=args[0]/1048576;return {budgetBytes:args[0],usedBytes:0,protectedBytes:0,entryCount:0,activeEntries:0,freeBytes:107374182400,minFreeBytes:268435456};}
@@ -113,9 +126,12 @@ function createFakeModel(books, pages) {
         return this.pages.map(absolutePath => ({ absolutePath }));
       }
       if (channel === 'open-local-book') {
-        assert(this.books.some(book => book.filepath === args[0]), 'External reader received a path outside the fake library');
+        const book=this.books.find(book => book.filepath === args[0] && (!args[1]?.bookId || args[1].bookId === book.id));
+        assert(book, 'External reader received a path outside the fake library');
         if (this.externalError) throw new Error(this.externalError);
-        return null;
+        const visit={time:Date.now(),source:'external'};
+        this.readingState.visits ||= {};this.readingState.visits[book.id]=visit;this.readingState.revision++;
+        return {opened:true,recorded:true,bookId:book.id,visit:clone(visit)};
       }
       if (['release-sendimagelock', 'update-window-title', 'show-file', 'window-minimize', 'window-toggle-maximize', 'window-close'].includes(channel)) return null;
       if (channel === 'select-folder') return null;
@@ -130,7 +146,15 @@ async function attachFakeIpc(context, model, { forceWebglUnavailable = false } =
   await context.addInitScript(({ forceWebglUnavailable }) => {
     const listeners = new Map();
     window.ipcRenderer = {
-      invoke: (channel, ...args) => window.__galleryFakeInvoke(channel, args),
+      invoke: async (channel, ...args) => {
+        const result = await window.__galleryFakeInvoke(channel, args);
+        if (channel === 'task-start' && ['scan', 'metadata'].includes(args[0]) && result?.status === 'completed') {
+          if (result.fixtureTasks) window.__galleryEmit('tasks-changed', { tasks:result.fixtureTasks });
+          window.__galleryEmit('library-updated', { taskId:result.id, kind:args[0] });
+        }
+        if (channel === 'open-local-book' && result?.recorded) window.__galleryEmit('reading-visit-saved', {bookId:result.bookId,visit:result.visit});
+        return result;
+      },
       on(channel, callback) {
         if (!listeners.has(channel)) listeners.set(channel, []);
         listeners.get(channel).push(callback);
@@ -564,7 +588,8 @@ async function testReaderOptions(browser, fixtures) {
     await page.waitForFunction(() => !document.querySelector('[data-read]')?.disabled);
     const externalCalls = model.calls.filter(call => call.channel === 'open-local-book');
     assert.equal(externalCalls.length, 2);
-    assert.deepEqual(externalCalls.at(-1).args, [book.filepath]);
+    assert.deepEqual(externalCalls.at(-1).args, [book.filepath,{bookId:book.id}]);
+    assert.equal(model.readingState.visits[book.id].source,'external','Main-process acknowledgement preserves the external opening record');
     assert.equal(model.calls.filter(call => call.channel === 'load-manga-image-list').length, internalLoads);
     assert.equal(await page.locator('.reader').count(), 0, 'External reading should not open the internal reader');
     assert.equal(model.books[0].readCount, readCount, 'External dispatch must not claim that an internal page was viewed');

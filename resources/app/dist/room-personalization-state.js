@@ -62,17 +62,23 @@ export function selectFeaturedBooks(books, ids) {
   return [...new Set((ids||[]).filter(validFeaturedId))].flatMap(id=>byId.has(id)?[byId.get(id)]:[]);
 }
 
-export function summarizeReadingProgress(books, progress, now=Date.now()) {
+export function summarizeReadingProgress(books, progress, now=Date.now(), visits={}) {
   const visible=new Map(), records=[];
   for(const book of books||[])if(book&&!book.hiddenBook&&validFeaturedId(book.id))visible.set(book.id,book);
   for(const [id,book] of visible){
     const value=Object.prototype.hasOwnProperty.call(progress||{},id)?progress[id]:null;
-    if(!value||!Number.isSafeInteger(value.page)||!Number.isSafeInteger(value.total)||value.page<1||value.total<1)continue;
-    const page=Math.min(value.page,value.total), time=typeof value.time==='number'&&Number.isFinite(value.time)&&value.time>0&&value.time<=now?value.time:0;
-    records.push({id,book,page,total:value.total,time,finished:page===value.total});
+    const hasPage=value&&Number.isSafeInteger(value.page)&&Number.isSafeInteger(value.total)&&value.page>0&&value.total>0;
+    const visit=Object.hasOwn(visits||{},id)?visits[id]:null;
+    if(!hasPage&&!visit&&!(book.readCount>0))continue;
+    const timestamp=Math.max(hasPage?value.time||0:0,visit?.time||0);
+    const time=typeof timestamp==='number'&&Number.isFinite(timestamp)&&timestamp>0&&timestamp<=now?timestamp:0;
+    const page=hasPage?Math.min(value.page,value.total):null;
+    records.push({id,book,page,total:hasPage?value.total:null,time,source:visit?.time>=value?.time?visit.source:hasPage?value.source:visit?.source,
+      finished:!!hasPage&&page===value.total});
   }
   const finished=records.filter(record=>record.finished).length;
   return {total:visible.size,recorded:records.length,finished,reading:records.length-finished,unread:visible.size-records.length,
     recentWeek:records.filter(record=>record.time>0&&record.time>=now-7*86400000).length,
-    recent:records.filter(record=>record.time>0).sort((a,b)=>b.time-a.time||a.id.localeCompare(b.id)).slice(0,8)};
+    records:records.sort((a,b)=>b.time-a.time||a.id.localeCompare(b.id)),
+    recent:records.filter(record=>record.time>0).slice(0,8)};
 }

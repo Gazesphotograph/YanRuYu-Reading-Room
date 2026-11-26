@@ -35,10 +35,32 @@ const patches = [
   [';return t({drawerVisibleViewer:b,showThumbnail:E,currentImageIndex:Q,viewerImageList:O',
     ';window.readingState.registerClassicReader(()=>{if(!__readingReady||!b.value||E.value||(C.value==="single"&&!O.value[Q.value])||(C.value==="double"&&!I.value[Q.value]?.page?.length))return null;const re=ie();return{ready:true,book:s.value,pageId:re,total:O.value[0]?.total||s.value.pageCount,offset:__readingOffset(re),visiblePageIds:C.value==="double"?(I.value[Q.value]?.page||[]).map(we=>we.id):[]}});return t({drawerVisibleViewer:b,showThumbnail:E,currentImageIndex:Q,viewerImageList:O'],
 ];
-for (const [before, after] of patches) {
+function withSharedMode(value) {
+  return value
+    .replace('T.value=window.readingState.classicEntries(),J.value=!1,G.value=Se',
+      'T.value=window.readingState.classicEntries(),window.readingState.preferences[re.id]&&(C.value=({paged:"single",double:"double",continuous:"scroll"})[window.readingState.preferences[re.id].mode]||C.value),J.value=!1,G.value=Se')
+    .replace('visiblePageIds:C.value==="double"?(I.value[Q.value]?.page||[]).map(we=>we.id):[],force:true',
+      'visiblePageIds:C.value==="double"?(I.value[Q.value]?.page||[]).map(we=>we.id):[],mode:({single:"paged",double:"double",scroll:"continuous"})[C.value],force:true')
+    .replace('return{ready:true,book:s.value,pageId:re,total:',
+      'return{ready:true,book:s.value,pageId:re,mode:({single:"paged",double:"double",scroll:"continuous"})[C.value],total:');
+}
+function withReadingVisits(value) {
+  return value.replace('__readingReady=false,T.value=window.readingState.classicEntries()',
+    '__readingReady=false,window.readingState.beginClassicSession(re.id),T.value=window.readingState.classicEntries()');
+}
+for (const [before, legacyAfter] of patches) {
+  const sharedModeAfter=withSharedMode(legacyAfter), after=withReadingVisits(sharedModeAfter);
+  if(source.includes(sharedModeAfter)&&after!==sharedModeAfter)source=source.replace(sharedModeAfter,after);
+  else if(after!==legacyAfter&&source.includes(legacyAfter))source=source.replace(legacyAfter,after);
   if (source.includes(after)) continue;
   if (source.split(before).length !== 2) throw new Error('Classic reader patch no longer matches: ' + before.slice(0, 100));
   source = source.replace(before, after);
+}
+const legacyExternal = 'ipcRenderer.invoke("open-local-book",a.value.filepath)';
+const externalWithId = 'ipcRenderer.invoke("open-local-book",a.value.filepath,{bookId:a.value.id})';
+if (!source.includes(externalWithId)) {
+  if (source.split(legacyExternal).length !== 2) throw new Error('Classic external reader patch no longer matches');
+  source=source.replace(legacyExternal,externalWithId);
 }
 fs.writeFileSync(target, source, 'utf8');
 console.log('Classic reading-state bridge: ' + patches.length + ' verified patches');

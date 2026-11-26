@@ -1,3 +1,4 @@
+import { localCover } from './room-cover.js';
 // UI for the main-process preview/commit/undo service. All user-controlled text
 // is escaped; apply receives an opaque server preview token, never edited rows.
 const invoke = (channel, ...args) => window.ipcRenderer.invoke(channel, ...args);
@@ -31,7 +32,8 @@ function sourceDetails(book) {
   return `${originalTitle}<p class="organizer-note organizer-path" data-source-name>${book.type === 'folder' ? '文件夹名' : '文件名'}：${esc(filename)}</p>`;
 }
 function sourceCard(book, label) {
-  return `<article class="organizer-source"><strong>${esc(label)} · ${sourceTitle(book)}</strong>${sourceDetails(book)}<p>${book.pageCount || '未知'} 页 · ${esc(progressLabel(book.progress))}${book.hiddenBook ? ' · 原本已隐藏' : ''}</p><p class="organizer-path" data-source-path>${esc(book.filepath)}</p><small>书籍标识：${esc(book.id)}</small></article>`;
+  const cover = localCover(book);
+  return `<article class="organizer-source">${cover ? `<img class="compare-cover" src="${esc(cover)}" alt="封面 · ${esc(book.title)}">` : ''}<strong>${esc(label)} · ${sourceTitle(book)}</strong>${sourceDetails(book)}<p>${book.pageCount || '未知'} 页 · ${esc(progressLabel(book.progress))}${book.hiddenBook ? ' · 原本已隐藏' : ''}</p><p class="organizer-path" data-source-path>${esc(book.filepath)}</p><small>书籍标识：${esc(book.id)}</small></article>`;
 }
 
 async function syncReading() {
@@ -68,12 +70,13 @@ function filtered(context) {
 }
 function updateSelection(context) {
   context.dialog.querySelector('[data-selected-count]').textContent = `已选 ${context.selected.size} 本`;
+  if (context.tableScope) return;
   const selected = context.books.filter(book => context.selected.has(book.id));
   const host = context.dialog.querySelector('[data-merge-options]');
   const previousKeeper = host.querySelector('[data-keeper]')?.value;
   const previousProgress = host.querySelector('[data-progress-source]')?.value;
   const previousPolicy = host.querySelector('[data-metadata-policy]')?.value || 'union';
-  if (selected.length < 2) { host.innerHTML = '<p class="organizer-note">选择 2 至 30 本书后，可以指定保留本、进度和元数据来源。</p>'; return; }
+  if (selected.length < 2 || selected.length > 30) { host.innerHTML = '<p class="organizer-note">选择 2 至 30 本书后，可以指定保留本、进度和元数据来源。</p>'; return; }
   const options = selected.map(book => `<option value="${esc(book.id)}">${esc(book.title)} · ${book.pageCount || '?'} 页</option>`).join('');
   host.innerHTML = `<label>保留在书架上的书籍<select data-keeper>${options}</select></label><label>阅读进度来源<select data-progress-source>${selected.map(book => `<option value="${esc(book.id)}">${esc(book.title)} · ${esc(progressLabel(book.progress))}</option>`).join('')}</select></label><label>元数据保留方式<select data-metadata-policy><option value="union">合并全部标签，优先保留本的信息</option><option value="keeper">使用保留本的作者、标签与信息</option></select></label><details><summary>分别指定书名、分类与评分来源</summary>${['title', 'title_jpn', 'category', 'rating'].map(key => `<label>${labels[key]}<select data-source-field="${key}"><option value="">按所选保留方式</option>${selected.map(book => `<option value="${esc(book.id)}">${esc(book.title)}：${esc(fieldValue(key, key === 'title' ? book.originalTitle : book[key]))}</option>`).join('')}</select></label>`).join('')}</details>`;
   if (selected.some(book => book.id === previousKeeper)) host.querySelector('[data-keeper]').value = previousKeeper;
@@ -94,6 +97,7 @@ function renderBooks(context) {
 async function refreshCatalog(context) {
   const result = await invoke('organizer-catalog');
   context.books = result.books || []; context.maxBatch = result.maxBatch || 2000;
+  if (context.tableScope) context.books = context.books.filter(book => context.tableScope.has(book.id) && !book.mergedInto);
   context.maxRemoveMissing = result.maxRemoveMissing || 100000;
   const ids = new Set(context.books.filter(book => !book.mergedInto).map(book => book.id));
   context.selected = new Set([...context.selected].filter(id => ids.has(id)));
@@ -111,7 +115,7 @@ function renderPreview(context, preview) {
   const warning = (preview.warnings || []).map(message => `<li>${esc(message)}</li>`).join('');
   if (removing) host.innerHTML = `<h3 tabindex="-1" data-remove-heading>确认删除 ${preview.changed} 本书库记录？</h3><p>只删除下面的书库记录，<strong>不会删除磁盘文件</strong>。元数据、阅读档案和合集引用保留，之后可在「整理历史」撤销。</p><p class="organizer-note">暂不可访问可能只是磁盘未连接。提交时会再次检查，已经恢复访问的书籍不会被删除。</p><ul class="organizer-removal-list" aria-label="待删除的书库记录">${preview.rows.map(row => `<li><div><strong>${esc(row.title)}</strong><span class="organizer-badge">${healthLabels[row.status] || esc(row.status)}</span></div><p class="organizer-path">${esc(row.filepath)}</p></li>`).join('')}</ul>`;
   else if (preview.kind === 'batch') host.innerHTML = `<h3>修改预览 · ${preview.changed} 本发生变化</h3><p class="organizer-note">已选择 ${preview.selected} 本；只记录实际变动的字段。</p>${preview.rows.map(row => `<details ${preview.rows.length <= 3 ? 'open' : ''}><summary>${esc(row.title)}</summary>${fieldsTable(row.before, row.after)}</details>`).join('')}`;
-  else host.innerHTML = `<h3>合并预览</h3><p class="organizer-evidence">${esc(preview.evidence)}</p>${sourceCard(preview.keeper, '保留展示')}${preview.donors.map(book => sourceCard(book, '隐藏为来源副本')).join('')}<h4>保留本的元数据</h4>${fieldsTable(preview.metadata.before, preview.metadata.after, { changedOnly: true })}<p><strong>阅读进度：</strong>${esc(progressLabel(preview.progress.before))} → ${esc(progressLabel(preview.progress.after))}</p><p><strong>合集：</strong>${preview.collections.length ? preview.collections.map(collection => esc(collection.title) + (collection.added ? '（加入保留本）' : '（已包含）')).join('、') : '未加入任何合集'}</p><p class="organizer-note">阅读偏好沿用保留本；阅读次数保留最大值 ${preview.retainedReadCount}。每份来源的进度、偏好、合集引用与原文件都会保留。</p>`;
+  else host.innerHTML = `<h3>合并预览</h3><p class="organizer-evidence">${esc(preview.evidence)}</p><div class="organizer-source-grid">${sourceCard(preview.keeper, '保留展示')}${preview.donors.map(book => sourceCard(book, '隐藏为来源副本')).join('')}</div><h4>保留本的元数据</h4>${fieldsTable(preview.metadata.before, preview.metadata.after, { changedOnly: true })}<p><strong>阅读进度：</strong>${esc(progressLabel(preview.progress.before))} → ${esc(progressLabel(preview.progress.after))}</p><p><strong>合集：</strong>${preview.collections.length ? preview.collections.map(collection => esc(collection.title) + (collection.added ? '（加入保留本）' : '（已包含）')).join('、') : '未加入任何合集'}</p><p class="organizer-note">阅读偏好沿用保留本；阅读次数保留最大值 ${preview.retainedReadCount}。每份来源的进度、偏好、合集引用与原文件都会保留。</p>`;
   host.insertAdjacentHTML('beforeend', `${warning ? `<ul class="organizer-warnings">${warning}</ul>` : ''}<div class="organizer-actions"><button type="button" class="${removing ? 'organizer-danger organizer-danger-primary' : 'organizer-primary'}" data-organizer="apply" ${!preview.changed && preview.kind !== 'merge' ? 'disabled' : ''}>${removing ? `确认删除 ${preview.changed} 本记录` : preview.kind === 'merge' ? '确认合并书架展示' : '确认应用修改'}</button><button type="button" data-organizer="discard-preview">${removing ? '取消删除' : '返回修改'}</button></div>`);
   host.scrollIntoView({ behavior: 'smooth', block: removing ? 'start' : 'nearest' });
   if (removing) host.querySelector('[data-remove-heading]').focus({ preventScroll: true });
@@ -256,12 +260,20 @@ async function handleAction(context, button) {
   }
 }
 
-export async function openLibraryOrganizer({ bookIds = [] } = {}) {
+export async function openLibraryOrganizer({ bookIds = [], entry = 'batch' } = {}) {
   styles();
   if (active?.dialog.open) { active.dialog.focus(); return; }
   const context = buildDialog(bookIds); active = context;
   const { dialog } = context;
   document.body.append(dialog);
+  if (entry === 'table-batch') {
+    context.tableScope = new Set(bookIds);
+    dialog.querySelector('#organizer-title').textContent = '批量编辑所选书籍';
+    dialog.querySelector('.organizer-tabs').hidden = true;
+    dialog.querySelector('[data-merge-card]').hidden = true;
+    dialog.querySelector('[data-include-hidden]').checked = true;
+    dialog.querySelector('[data-include-hidden]').closest('label').hidden = true;
+  }
   dialog.addEventListener('cancel', event => { event.preventDefault(); dialog.close(); });
   dialog.addEventListener('close', () => { if (active === context) active = null; dialog.remove(); });
   dialog.addEventListener('keydown', event => {
@@ -302,9 +314,33 @@ export async function openLibraryOrganizer({ bookIds = [] } = {}) {
     handleAction(context, button).catch(error => { context.invalidate(); context.status(String(error.message || error).replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''), true); });
   });
   dialog.showModal(); context.status('正在载入书库…');
-  try { await window.readingState?.flush?.(); await refreshCatalog(context); context.status('选择书籍，开始整理。'); }
-  catch (error) { context.status(error.message || String(error), true); }
-  dialog.querySelector('[data-search]').focus();
+  try {
+    await window.readingState?.flush?.();
+    await refreshCatalog(context);
+    if (!dialog.open) return;
+    if (entry === 'compare') {
+      dialog.classList.add('organizer-comparison');
+      dialog.querySelector('[data-merge-card]').open = true;
+      await handleAction(context, dialog.querySelector('[data-organizer="preview-merge"]'));
+      const heading = dialog.querySelector('[data-preview] h3');
+      if (heading) { heading.tabIndex = -1; heading.focus(); }
+    } else if (context.tableScope) {
+      context.status(`表格勾选了 ${context.tableScope.size} 本，当前可编辑 ${context.selected.size} 本。`);
+      dialog.querySelector('[data-edit-namespace]').focus();
+    } else if (entry === 'history') {
+      await handleAction(context, dialog.querySelector('[data-tab="history"]'));
+      dialog.querySelector('[data-tab="history"]').focus();
+    } else if (entry === 'health') {
+      await handleAction(context, dialog.querySelector('[data-tab="health"]'));
+      await refreshHealth(context);
+      context.missingSelected = new Set(bookIds.filter(id => missingCandidates(context).some(book => book.id === id)));
+      updateMissingSelection(context);
+      dialog.querySelector('[data-tab="health"]').focus();
+    } else {
+      context.status('选择书籍，开始整理。');
+      dialog.querySelector('[data-search]').focus();
+    }
+  } catch (error) { context.status(error.message || String(error), true); }
 }
 
 // Root can mount this in its single toolbar, or invoke open directly from a

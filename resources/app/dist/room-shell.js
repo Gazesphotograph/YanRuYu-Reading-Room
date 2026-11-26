@@ -12,8 +12,11 @@ export function shellMarkup(icon) {
       </section>
       <div class="nav-label">书库管理</div>
       <button class="nav-btn" data-action="scan" title="扫描书库">${icon('refresh')}<span>扫描书库</span></button>
+      <button class="nav-btn" data-action="metadata-batch" title="批量拉取元数据">${icon('tag')}<span>批量拉取元数据</span></button>
       <button class="nav-btn" data-action="tasks" title="任务中心">${icon('clock')}<span>任务中心</span><span id="task-count" class="count" hidden></span></button>
+      <button class="nav-btn" data-action="reading-history" title="阅读记录">${icon('clock')}<span>阅读记录</span></button>
       <button class="nav-btn" data-action="organizer" title="批量整理与书库检查" aria-label="批量整理与书库检查">${icon('tag')}<span>整理与检查</span></button>
+      <button class="nav-btn" data-action="library-import" title="书库导入">${icon('folder')}<span>书库导入</span></button>
       <button class="nav-btn" data-action="discovery" title="本地检索与相似推荐" aria-label="本地检索与相似推荐">${icon('search')}<span>本地检索</span></button>
       <button class="nav-btn" data-action="personalization" title="布置私人阅览室" aria-label="布置私人阅览室">${icon('shelf')}<span>私人阅览室</span></button>
       <button class="nav-btn" data-action="library" title="选择书库文件夹">${icon('folder')}<span>书库文件夹</span></button>
@@ -26,13 +29,22 @@ export function shellMarkup(icon) {
     <main class="main">
       <header class="topbar">
         <div class="window-drag-region"><div class="breadcrumb">私人藏书 <span>/</span> <b id="breadcrumb">全部藏书</b></div></div>
+        <nav class="workspace-nav" aria-label="主导航" hidden>
+          <button type="button" data-workspace="desk">书桌</button>
+          <button type="button" data-workspace="library">书库</button>
+          <button type="button" data-workspace="room">阅览室</button>
+        </nav>
         <div class="top-actions">
           <label class="search">${icon('search')}<input id="search" aria-label="搜索书名、作者或标签" placeholder="找一本书，或一个标签…" autocomplete="off"><kbd>Ctrl K</kbd></label>
+          <select id="search-scope" aria-label="搜索范围"><option value="metadata">书目信息</option><option value="all">书目与文本</option><option value="text">页内文本</option></select>
           <button class="appearance-button" data-action="theme" title="外观主题" aria-label="外观主题">${icon('palette')}<span>外观</span></button>
           <div class="window-controls"><button data-action="minimize" title="最小化" aria-label="最小化">${icon('minimize')}</button><button data-action="maximize" title="最大化" aria-label="最大化">${icon('maximize')}</button><button data-action="close-window" title="关闭窗口" aria-label="关闭窗口">${icon('close')}</button></div>
         </div>
       </header>
       <div class="content">
+        <section id="reading-desk" aria-label="书桌" hidden><h1>书桌</h1><p>正在打开书库…</p></section>
+        <div id="catalog-workspace">
+        <div class="room-context" hidden><strong id="room-context-label"></strong><div id="room-selection"></div></div>
         <section class="hero"><div><div class="eyebrow">A LITTLE SPACE, ALL YOUR STORIES.</div><h1>书中自有<em>颜如玉</em></h1><p id="hero-note">在自己的节奏里，翻开下一页。</p></div><div class="hero-aside"><div class="room-card">Quiet hours.<small>YAN RU YU</small></div><button class="pill-button" data-action="random">${icon('shuffle')}随手翻一本</button></div></section>
         <div class="toolbar">
           <div class="collection-filters">
@@ -44,21 +56,35 @@ export function shellMarkup(icon) {
             </div>
             <button class="pill-button favorites-filter" data-action="favorites" aria-pressed="false" title="只看收藏">${icon('heart')}<span>收藏</span><span id="count-favorites"></span></button>
           </div>
-          <div class="view-tools"><select id="sort" aria-label="书籍排序"><option value="recent">最近入藏</option><option value="title">书名顺序</option><option value="author">作者顺序</option><option value="pages">页数最多</option><option value="rating">评分最高</option></select><div class="view-toggle"><button data-view="shelf" title="立体书架" aria-label="立体书架">${icon('shelf')}</button><button data-view="grid" title="平铺封面" aria-label="平铺封面">${icon('grid')}</button></div></div>
+          <div class="view-tools"><select id="sort" aria-label="书籍排序"><option value="recent">最近入藏</option><option value="title">书名顺序</option><option value="author">作者顺序</option><option value="pages">页数最多</option><option value="rating">评分最高</option></select><div class="view-toggle"><button data-view="shelf" title="立体书架" aria-label="立体书架">${icon('shelf')}</button><button data-view="grid" title="平铺封面" aria-label="平铺封面">${icon('grid')}</button><button data-view="table" title="表格视图" aria-label="表格视图" hidden>${icon('table')}</button></div></div>
         </div>
         <div class="shelf-tools" aria-label="书架与合集">
+          <button class="pill-button" data-action="catalog-filter" aria-haspopup="dialog">目录与组合筛选</button>
           <label class="shelf-control"><span>智能书架</span><select id="smart-shelf" aria-label="智能书架"><option value="">当前筛选</option></select></label>
           <button class="pill-button" data-action="save-shelf" title="把当前搜索和筛选保存为智能书架">保存筛选</button>
           <button class="pill-button" data-action="manage-shelves">管理书架</button>
           <button class="pill-button" data-action="featured" aria-pressed="false">精选陈列</button>
           <button class="pill-button" id="reset-filters" data-action="reset" hidden>清除筛选</button>
           <label class="shelf-control collection-control"><span>合集</span><select id="collection-select" aria-label="按合集浏览"><option value="">全部合集与单本</option></select></label>
+          <button class="pill-button" data-action="collections">管理合集</button>
           <label class="shelf-control density-control" id="density-control" hidden><span>平铺密度</span><select id="grid-density" aria-label="平铺密度"><option value="comfortable">舒展 · 12 本</option><option value="standard">适中 · 24 本</option><option value="compact">紧凑 · 48 本</option></select></label>
         </div>
         <div id="active-tags" class="active-tags" aria-label="已选择的标签" hidden></div>
+        <p id="workspace-search-status" class="path" role="status" hidden></p>
+        <div id="filtered-book-notice" class="filtered-book-notice" hidden><span role="status">这本书已移出当前筛选。</span><button class="pill-button" data-show-filtered-book="">查看此书</button></div>
+        <div id="table-selection" hidden>
+          <span id="table-selected-count" role="status"></span>
+          <button class="pill-button" data-action="edit-checked-books">批量编辑所选书籍</button>
+          <button class="pill-button" data-action="collect-checked-books">加入合集</button>
+          <button class="pill-button" data-action="import-checked-books">导入所选元数据</button>
+          <button class="pill-button" data-action="compare-books">对照所选书籍</button>
+          <button class="pill-button" data-action="clear-table-selection">清空选择</button>
+          <button class="pill-button" data-action="organizer-history">整理历史</button>
+        </div>
         <div class="shelf-heading"><strong id="shelf-title">COLLECTION / 01</strong><span>你的故事，井然有序</span></div>
         <div id="room" class="room"><div class="empty">${icon('shelf')}<h2>正在整理你的书架</h2><p>即将展示已保存漫画的封面</p></div></div>
         <footer class="shelf-footer"><span id="results"></span><span class="quiet-note">${icon('leaf')}点击详情 · 双击阅读</span><div class="pagination"><button data-action="prev" aria-label="上一组书架">${icon('left')}</button><span id="pagination">01 / 01</span><button data-action="next" aria-label="下一组书架">${icon('right')}</button><form id="shelf-jump" class="shelf-jump"><input id="shelf-page" type="number" min="1" max="1" value="1" aria-label="书架页码"><button type="submit" aria-label="跳转书架页码">前往</button></form></div></footer>
+        </div>
       </div>
     </main>
   </div><div id="modal-root"></div><div id="reader-root"></div><div id="toast" class="toast" role="status" hidden></div>`;

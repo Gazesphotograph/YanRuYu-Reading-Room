@@ -22,6 +22,8 @@
 
 ## 下载与使用
 
+当前源码提供 **2.0 开发预览**。运行 `npm run dev` 后，在「阅览室设置」启用预览，可使用统一的书桌、书库表格和阅览室。详情提供在线元数据的字段预览，侧栏提供阅读记录和导入入口，书库提供合集管理。迁移与验证范围见 [2.0 功能验收矩阵](docs/颜如玉2.0功能验收矩阵.md)。
+
 从 [Releases][releases] 下载 Windows x64 ZIP，解压到新文件夹，双击 `exhentai-manga-manager.exe`。普通使用无需安装 Node.js。
 
 首次运行默认使用系统用户应用数据目录。在程序旁创建 `data` 文件夹可启用便携模式；也可以通过环境变量 `YANRUYU_DATA_DIR` 指定独立数据目录的绝对路径。
@@ -42,13 +44,14 @@ npm run dev
 | 命令 | 用途 |
 | --- | --- |
 | `npm run check` | JavaScript 语法、发布源文件允许列表与配置格式 |
-| `npm test` | 工程、数据保护、阅读、整理、检索及隔离桌面回归 |
+| `npm test` | 精简工作区回归。用两本模拟书检查进入和离开阅览室、窄窗操作与封面降级 |
 | `npm run test:engineering` | 数据路径隔离、发布允许列表与精简运行时检查 |
 | `npm run test:desktop` | 使用中性测试书库验证真实 Electron、IPC、SQLite 与图片解码 |
 | `npm run test:backup-desktop` | 验证备份导出、坏包拒绝、恢复与损坏恢复入口 |
-| `npm run test:all` | 全部受支持回归，包括隔离桌面测试 |
+| `npm run test:all` | 全量回归，包含隔离桌面测试。仅在排查报错需要扩大范围或用户明确要求时运行 |
 | `npm run build` | 构建应用 staging，安装锁定生产依赖并生成源码哈希 |
 | `npm run package` | 生成不含用户数据的 Windows x64 程序目录与 ZIP |
+| `npm run package -- --preview` | 生成单独命名的 2.0 预览包 |
 | `npm run release:audit` | 复核最近发布目录的数据排除规则与文件哈希 |
 | `npm run compact -- --current --measure` | 测量当前程序的磁盘占用 |
 | `npm run compact -- --current` | 无损压缩当前程序运行文件的磁盘占用 |

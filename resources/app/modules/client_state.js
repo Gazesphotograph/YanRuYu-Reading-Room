@@ -12,6 +12,7 @@ const CLIENT_KEYS = new Set([
   'expandNodes', 'sortValue', 'room-theme', 'room-sort', 'room-view',
   'room-progress', 'room-reading-mode', 'room-external-reader',
   'room-library-state', 'room-smart-shelves', 'room-quality', 'room-personalization',
+  'room-workspace-preview', 'room-workspace-library-view', 'room-workspace-start-page',
   'reading-room-theme', 'manager-theme', 'theme', 'room-night', 'appTheme',
 ])
 const MAX_CLIENT_BYTES = 32 * 1024 * 1024
@@ -19,13 +20,17 @@ const MAX_CLIENT_BYTES = 32 * 1024 * 1024
 function validateClientValue(key, raw) {
   const jsonKeys = new Set(['recentRead', 'viewerReadingProgress', 'expandNodes', 'room-progress',
     'room-theme', 'room-sort', 'room-view', 'room-reading-mode', 'room-external-reader', 'room-night',
-    'room-library-state', 'room-smart-shelves', 'room-quality', 'room-personalization'])
+    'room-library-state', 'room-smart-shelves', 'room-quality', 'room-personalization',
+    'room-workspace-preview', 'room-workspace-library-view', 'room-workspace-start-page'])
   let value = raw
   if (jsonKeys.has(key)) {
     try { value = JSON.parse(raw) } catch { throw new Error('界面偏好内容不是有效 JSON：' + key) }
   }
   const object = value => !!value && typeof value === 'object' && !Array.isArray(value)
   if (key === 'room-quality' && !['power','balanced','fine'].includes(value)) throw new Error('场景画质偏好无效')
+  if (key === 'room-workspace-preview' && typeof value !== 'boolean') throw new Error('工作区预览开关无效')
+  if (key === 'room-workspace-library-view' && !['grid', 'table'].includes(value)) throw new Error('书库视图无效')
+  if (key === 'room-workspace-start-page' && !['desk', 'library', 'room'].includes(value)) throw new Error('启动页无效')
   if (key === 'room-library-state') validateLibraryState(value)
   if (key === 'room-personalization') validatePersonalization(value)
   if (key === 'room-smart-shelves') {
@@ -60,6 +65,9 @@ function validateLibraryState(value, queryOnly = false) {
       !['all','reading','finished','unread'].includes(value.filter) || typeof value.favorites !== 'boolean' ||
       typeof value.collectionId !== 'string' || value.collectionId.length > 200) throw new Error('书架筛选内容无效')
   if (value.featured !== undefined && typeof value.featured !== 'boolean') throw new Error('精选陈列筛选无效')
+  if (value.searchMode !== undefined && !['metadata', 'all', 'text'].includes(value.searchMode)) throw new Error('搜索范围无效')
+  if (value.folder !== undefined && (typeof value.folder !== 'string' || value.folder.length > 32767)) throw new Error('目录筛选无效')
+  if (value.classicQuery !== undefined && (typeof value.classicQuery !== 'string' || value.classicQuery.length > 1000)) throw new Error('组合筛选无效')
   for (const key of ['selectedTags','excludedTags']) {
     if (!Array.isArray(value[key]) || value[key].length > 200) throw new Error('书架标签筛选无效')
     for (const raw of value[key]) {
