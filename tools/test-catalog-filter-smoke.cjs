@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 const { chromium } = require('./playwright-runtime.cjs');
 const { appURL, createFixtures, createFakeModel, attachFakeIpc, launchOptions } = require('./test-gallery.cjs');
 const { folderTree } = require('../resources/app/modules/folder_tree');
@@ -22,12 +21,11 @@ async function main() {
       tags: { artist: [i === 1 ? 'Other Studio' : 'River Studio'], other: [i === 3 ? 'skip' : 'paper'] },
     }));
     browser = await chromium.launch(launchOptions());
-    async function open(classic) {
-      const context = await browser.newContext({ viewport: { width: classic ? 1280 : 720, height: 720 }, reducedMotion: 'reduce' });
+    async function open() {
+      const context = await browser.newContext({ viewport: { width: 720, height: 720 }, reducedMotion: 'reduce' });
       const model = createFakeModel(books, pages);
       Object.assign(model.setting, { library: directory, language: 'zh-CN', displayTitle: 'englishTitle',
         loadOnStart: false, autoCheckUpdates: false, disableRandomTag: true, collectTag: [], pageSize: 20 });
-      if (classic) model.books.forEach(book => { book.coverPath = pathToFileURL(book.coverPath).href; });
       const invoke = model.invoke.bind(model);
       model.invoke = (channel, ...args) => {
         if (channel === 'get-folder-tree') return folderTree(directory, args[0]);
@@ -36,37 +34,20 @@ async function main() {
         return invoke(channel, ...args);
       };
       await attachFakeIpc(context, model);
-      await context.addInitScript(classic => {
-        window.ipcRenderer.sendSync = () => '\\';
-        window.electronFunction = { 'get-zoom-level': () => 0, 'set-zoom-level': () => {}, 'insert-css': () => {} };
-        localStorage.setItem('reading-room-interface', classic ? 'classic' : 'room');
+      await context.addInitScript(() => {
         localStorage.setItem('room-workspace-preview', 'true');
         localStorage.setItem('room-workspace-start-page', '"library"');
         localStorage.setItem('room-workspace-library-view', '"table"');
-        if (classic) localStorage.setItem('expandNodes', JSON.stringify(['', 'Atlas']));
-      }, classic);
+      });
       const page = await context.newPage();
       page.setDefaultTimeout(7000);
       await page.goto(appURL);
       return page;
     }
     const expression = 'a:"River Studio"$ -o:"skip"$ :count>1 :atime>2020-01-01 ~cat:"Sketch"$';
-    const classic = await open(true);
-    await classic.locator('.book-card').first().waitFor();
-    await classic.locator('.app-toolbar button').first().click();
-    const tree = classic.locator('.ftree');
-    if (!await tree.getByText('Atlas', { exact: true }).isVisible()) await tree.locator('.el-tree-node__expand-icon').first().click();
-    await tree.getByText('Atlas', { exact: true }).click();
-    await classic.keyboard.press('Escape');
-    const search = classic.locator('.app-toolbar .search-input input');
-    await search.fill(expression);
-    await search.press('Enter');
-    await classic.waitForFunction(() => document.querySelectorAll('.book-card .book-title').length === 2);
-    const reference = (await classic.locator('.book-card .book-title').allTextContents()).map(s => s.trim()).sort();
-    assert.deepEqual(reference, books.slice(0, 2).map(book => book.title).sort());
-    await classic.context().close();
-
-    const page = await open(false);
+    // Recorded from the 1.6.16 manager with this four-book fixture.
+    const reference = books.slice(0, 2).map(book => book.title).sort();
+    const page = await open();
     const filter = page.getByRole('button', { name: /^目录与组合筛选/ });
     await filter.click();
     const dialog = page.getByRole('dialog', { name: '目录与组合筛选' });
@@ -96,7 +77,7 @@ async function main() {
     assert.deepEqual((await titles.allTextContents()).sort(), reference);
     assert.equal(await page.locator('.sidebar [data-action="classic"]').isVisible(), false);
     await page.locator('[data-action="settings"]').click();
-    await page.getByRole('button', { name: '打开完整管理界面' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '打开完整管理界面' }).count(), 0);
     console.log('PASS Four-book parity with the released classic UI, room round trip, saved shelf and reload.');
   } finally {
     await browser?.close();

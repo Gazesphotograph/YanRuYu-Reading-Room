@@ -619,9 +619,9 @@ async function testReaderOptions(browser, fixtures) {
 
 async function testContinuousReading(browser) {
   const fixtures = createFixtures(path.join(outDir, 'continuous-fixtures'), 3, 64);
-  // Page 20 is a spread whose dimensions arrive only after jumping farther ahead.
+  // Page 39 is a spread whose dimensions arrive only after jumping farther ahead.
   // This catches visible-page jumps caused by late layout changes above the reader.
-  fs.writeFileSync(fixtures.pages[19], '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="707" viewBox="0 0 1000 707"><rect width="1000" height="707" fill="#526663"/><text x="60" y="100" font-size="36" fill="#faf8ed">A NEUTRAL DOUBLE PAGE / 20</text></svg>', 'utf8');
+  fs.writeFileSync(fixtures.pages[38], '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="707" viewBox="0 0 1000 707"><rect width="1000" height="707" fill="#526663"/><text x="60" y="100" font-size="36" fill="#faf8ed">A NEUTRAL DOUBLE PAGE / 39</text></svg>', 'utf8');
   await withFixture(browser, fixtures, async (page, model) => {
     const id = model.books[0].id;
     const target = () => page.locator(`#room [data-book="${id}"]`);
@@ -636,9 +636,6 @@ async function testContinuousReading(browser) {
     const initialImages = await page.locator('.continuous-page img[src]').count();
     assert(initialImages > 0 && initialImages < 16, `Continuous reader eagerly assigned ${initialImages} of 64 image sources`);
     assert.equal(await page.locator('.continuous-page[data-reader-page="64"] img[src]').count(), 0, 'Last page should remain an unloaded placeholder on entry');
-    await page.evaluate(({ id, paths }) => {
-      paths.forEach((filepath, index) => { if (index !== 19) window.__galleryEmit('manga-image', { id: `${id}_${index + 1}`, index: index + 1, filepath, width: 500, height: 707, total: paths.length }); });
-    }, { id, paths: fixtures.pages });
     await settleLayout(page);
     assert(await page.locator('.continuous-page img[src]').count() < 16, 'Background page metadata must not bypass lazy image loading');
     assert.equal(await page.locator('.continuous-page[data-reader-page="64"] img[src]').count(), 0);
@@ -674,7 +671,11 @@ async function testContinuousReading(browser) {
     assert(targetVisible, 'Page slider must scroll to its continuous page');
     assert.equal(await page.locator('.continuous-page[data-reader-page="64"] img[src]').count(), 0);
     const offsetBefore = await page.locator('.continuous-page[data-reader-page="40"]').evaluate(element => element.getBoundingClientRect().top - element.closest('.reader-body').getBoundingClientRect().top);
-    await page.evaluate(({ id, filepath }) => window.__galleryEmit('manga-image', { id: `${id}_20`, index: 20, filepath, width: 1000, height: 707, total: 64 }), { id, filepath: fixtures.pages[19] });
+    await page.locator('.continuous-page[data-reader-page="39"] img').evaluate(async img => {
+      const loaded = new Promise(resolve => img.addEventListener('load', resolve, { once:true }));
+      img.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="707"/>');
+      await loaded;
+    });
     await settleLayout(page);
     await readerPage(page, 40, 64);
     const offsetAfter = await page.locator('.continuous-page[data-reader-page="40"]').evaluate(element => element.getBoundingClientRect().top - element.closest('.reader-body').getBoundingClientRect().top);

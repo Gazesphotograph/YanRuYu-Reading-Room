@@ -4,13 +4,34 @@
 // production renderer runs in a fresh browser with neutral covers and memory
 // IPC only. This file never opens the live app, its database or a real library.
 // Usage: node tools/test-ui-theme-consistency.cjs [--screenshots]
-//        [--case=themes,glass-panels,room-layout,dialog-layout,manager-layout]
+//        [--case=themes,glass-panels,room-layout,dialog-layout]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('./playwright-runtime.cjs');
 const { createFixtures, createFakeModel, attachFakeIpc, launchOptions, appURL } = require('./test-gallery.cjs');
-const { openManager, settleVisuals } = require('./test-manager-glass.cjs');
+async function settleVisuals(page) {
+  // Element visibility can become true at the beginning of a Vue/CSS entrance
+  // transition. Wait for fonts and finite transitions to finish before judging
+  // their paint; perpetual decorative animation must not block this helper.
+  await page.evaluate(async () => {
+    const deadline = performance.now() + 3000;
+    let quietSince = null;
+    while (performance.now() < deadline) {
+      const finite = document.getAnimations().filter(animation =>
+        (animation.pending || animation.playState === 'running')
+        && Number.isFinite(animation.effect?.getComputedTiming().endTime));
+      if (document.fonts.status === 'loaded' && finite.length === 0) {
+        if (quietSince !== null && performance.now() - quietSince >= 80) return;
+        quietSince ??= performance.now();
+      } else {
+        quietSince = null;
+      }
+      await new Promise(resolve => setTimeout(resolve, 40));
+    }
+    throw new Error('Fonts or finite entrance transitions did not settle within three seconds');
+  });
+}
 
 const output = path.resolve(process.env.UI_THEME_TEST_OUTPUT || path.join(__dirname, '.artifacts', 'ui-theme-consistency'));
 const selected = new Set((process.argv.find(arg => arg.startsWith('--case=')) || '').slice(7).split(',').filter(Boolean));
@@ -75,12 +96,12 @@ async function screenshot(page, name) {
   report.screenshots.push(filename);
 }
 
-async function theme(page, id, manager = false) {
-  await page.locator(manager ? '[data-manager-theme-open]' : '.appearance-button').click();
-  await page.locator(`${manager ? '.manager-appearance' : '#modal-root'} [data-theme-choice="${id}"]`).click();
+async function theme(page, id) {
+  await page.locator('.appearance-button').click();
+  await page.locator(`#modal-root [data-theme-choice="${id}"]`).click();
   await page.waitForFunction(id => document.documentElement.dataset.roomTheme === id, id);
   await page.keyboard.press('Escape');
-  await page.locator(manager ? '.setting-dialog' : '#modal-root .modal').waitFor({ state: 'hidden' });
+  await page.locator('#modal-root .modal').waitFor({ state: 'hidden' });
   await settleVisuals(page);
 }
 
@@ -328,69 +349,12 @@ async function dialogLayoutCheck(browser, fixtures) {
   });
 }
 
-async function managerLayoutCheck(browser, fixtures) {
-  const { page, context, model } = await openManager(browser, fixtures);
-  uiModel(model);
-  page.on('pageerror', error => report.errors.push({ case: activeCase, error: error.message }));
-  try {
-    for (const id of ['glass', 'paper', 'dark']) {
-      await theme(page, id, true);
-      for (const viewport of [{ width: 1560, height: 760 }, { width: 1280, height: 560 }, { width: 950, height: 520 }, { width: 720, height: 480 }]) {
-        await page.setViewportSize(viewport); await settleVisuals(page);
-        const before = await page.locator('.app-toolbar').boundingBox();
-        const scroll = await page.locator('.book-card-area').evaluate(element => { element.scrollTop = element.scrollHeight; return element.scrollTop; });
-        assert(scroll > 0, 'Manager library must actually scroll before checking its fixed toolbar');
-        const state = await page.evaluate(() => {
-          const box = element => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
-          const visible = element => { const r = element.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-          const intersects = (a, b) => Math.min(a.right, b.right) - Math.max(a.x, b.x) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.y, b.y) > 1;
-          const dock = [...document.querySelectorAll('.manager-room-return')].filter(visible).map(element => ({ name: element.getAttribute('aria-label') || element.textContent.trim(), ...box(element) }));
-          const controls = [...document.querySelectorAll('.pagination-bar button, .pagination-bar input, .pagination-bar .el-select__wrapper, .pagination-bar .el-pager li')].filter(visible).map(box);
-          const overlap = [];
-          for (let i = 0; i < dock.length; i++) {
-            for (let j = i + 1; j < dock.length; j++) if (intersects(dock[i], dock[j])) overlap.push([dock[i].name, dock[j].name]);
-            if (controls.some(control => intersects(dock[i], control))) overlap.push([dock[i].name, 'pagination']);
-          }
-          const row = dock.every(item => Math.abs(item.y - dock[0].y) <= 1);
-          const ordered = [...dock].sort((a, b) => row ? a.x - b.x : a.y - b.y);
-          const gaps = ordered.slice(1).map((item, index) => row ? item.x - ordered[index].right : item.y - ordered[index].bottom);
-          return { dock, overlap, controls, gaps, bookArea: box(document.querySelector('.book-card-area')), documentWidth: document.documentElement.scrollWidth,
-            aligned: ['x', 'right', 'y', 'bottom'].some(key => Math.max(...dock.map(item => item[key])) - Math.min(...dock.map(item => item[key])) <= 1),
-            heights: Math.max(...dock.map(item => item.height)) - Math.min(...dock.map(item => item.height)) };
-        });
-        assert.equal(state.dock.length, 3, 'The manager must expose return, backup and task controls');
-        assert.deepEqual(state.overlap, [], `Manager dock overlaps at ${id} ${viewport.width}px`);
-        assert(state.aligned && state.heights <= 1, `Manager utility buttons are misaligned: ${JSON.stringify(state.dock)}`);
-        assert(state.gaps.every(gap => gap >= 6) && Math.max(...state.gaps) - Math.min(...state.gaps) <= 1,
-          `Manager utility buttons have inconsistent spacing: ${JSON.stringify(state.gaps)}`);
-        assert(state.dock.every(button => button.y >= state.bookArea.bottom - 1), 'Manager utility buttons cover the scrollable library');
-        assert(state.documentWidth <= viewport.width + 1, 'Manager overflows the window');
-        for (const button of await page.locator('.manager-room-return').all()) assertVisibleHit(await hitState(button), 'Manager utility button');
-        assert(state.controls.every(control => control.x >= -1 && control.y >= -1 && control.right <= viewport.width + 1 && control.bottom <= viewport.height + 1),
-          `Manager pagination leaves the viewport: ${JSON.stringify(state.controls)}`);
-        const after = await page.locator('.app-toolbar').boundingBox();
-        assert(Math.abs(after.y - before.y) <= 1 && after.y >= 0, 'Scrolling moves the manager toolbar');
-        if (id === 'glass') await screenshot(page, `glass-manager-${viewport.width}x${viewport.height}`);
-        pass(`${id} manager ${viewport.width}x${viewport.height}: utility buttons align and avoid pagination`, state);
-      }
-      await page.locator('.manager-task-center').click(); await page.locator('.task-center-item').first().waitFor();
-      const taskPaint = await paint(page.locator('.task-center-dialog'));
-      assert.equal(taskPaint.color, taskPaint.expectedInk, 'Manager task dialog ignores the theme');
-      if (id === 'glass') assert(taskPaint.alpha < .99 && taskPaint.backdrop.length > 0, 'Manager task center loses the large glass surface');
-      await page.locator('[data-task-action="close"]').click();
-    }
-  } catch (error) {
-    await page.screenshot({ path: path.join(output, activeCase + '-failure.png') }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
-}
-
 async function main() {
   fs.mkdirSync(output, { recursive: true });
   const fixtures = createFixtures(path.join(output, 'fixtures'), 65, 4);
   const browser = await chromium.launch(launchOptions());
   try {
-    for (const [name, check] of Object.entries({ themes: themesCheck, 'glass-panels': glassPanelsCheck, 'room-layout': roomLayoutCheck, 'dialog-layout': dialogLayoutCheck, 'manager-layout': managerLayoutCheck })) {
+    for (const [name, check] of Object.entries({ themes: themesCheck, 'glass-panels': glassPanelsCheck, 'room-layout': roomLayoutCheck, 'dialog-layout': dialogLayoutCheck })) {
       if (selected.size && !selected.has(name)) continue;
       activeCase = name;
       try { await check(browser, fixtures); }

@@ -9,9 +9,13 @@ const { compactRuntime } = require('./compact.cjs');
 const { spawnSync } = require('node:child_process');
 
 function packageApp({ preview = false } = {}) {
-  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('The bundled 7-Zip/reader support Windows x64 packaging only.');
+  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('The bundled 7-Zip tools support Windows x64 packaging only.');
   const built = build();
-  const folder = uniqueDirectory(path.join(root, 'out'), `yanruyu-${preview?'2.0-preview-':''}${built.manifest.appVersion}-win32-x64`);
+  const version = built.manifest.appVersion;
+  const isPrerelease = version.includes('-');
+  preview = preview || isPrerelease;
+  const packageLabel = preview && !isPrerelease ? version + '-preview' : version;
+  const folder = uniqueDirectory(path.join(root, 'out'), `yanruyu-${packageLabel}-win32-x64`);
   const electronPath = electronExecutable();
   const electronDist = path.dirname(electronPath);
   for (const file of walk(electronDist)) {
@@ -22,7 +26,7 @@ function packageApp({ preview = false } = {}) {
   }
   fs.cpSync(path.join(built.folder, 'resources'), path.join(folder, 'resources'), { recursive: true, force: false, errorOnExist: true, dereference: false });
   const executable = path.join(folder, 'exhentai-manga-manager.exe');
-  brandExecutable(executable, path.join(folder, 'resources', 'app', 'public', 'icon.ico'));
+  brandExecutable(executable, path.join(folder, 'resources', 'app', 'public', 'icon.ico'), version);
   const compactScript = path.join(__dirname, 'compact-runtime.ps1');
   copyFile(compactScript, path.join(folder, '优化程序磁盘占用.ps1'));
   copyFile(path.join(root, 'LICENSE'), path.join(folder, 'YANRUYU-LICENSE.txt'));

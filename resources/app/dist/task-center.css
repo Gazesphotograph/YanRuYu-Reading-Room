@@ -58,8 +58,6 @@
 .task-center-item time { margin-left: auto; font-size: 11px; color: var(--muted, #60685c); font-variant-numeric: tabular-nums; }
 .task-center-empty { padding: 22px; text-align: center; color: var(--muted, #60685c); }
 .task-center-dialog .task-center-warning { color: var(--orange, #95603f); }
-.manager-task-center { position: fixed !important; right: 16px !important; bottom: 108px !important; z-index: 1400 !important; }
-.manager-task-center [data-task-center-count] { background: var(--control-bg, var(--green, #315445)); border-radius: 12px; color: var(--active-ink, #fffef8); padding: 1px 6px; margin-left: 4px; }
 @media (max-width: 600px), (max-height: 600px) {
   .task-center-dialog { padding: 20px; width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
   .task-center-dialog header { gap: 12px; margin-bottom: 15px; }

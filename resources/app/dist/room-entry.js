@@ -1,13 +1,14 @@
 (async () => {
   await import('./client-state.js');
-  const classic = localStorage.getItem('reading-room-interface') === 'classic';
-  document.documentElement.classList.toggle('manager-interface', classic);
+  if (localStorage.getItem('reading-room-interface') === 'classic') {
+    localStorage.setItem('room-workspace-preview', 'true');
+    if (!localStorage.getItem('room-workspace-start-page')) localStorage.setItem('room-workspace-start-page', '"library"');
+    localStorage.setItem('reading-room-interface', 'room');
+  }
   await import('./theme-init.js');
   await (await import('./reading-state.js')).initializeReadingState();
 
-  const styles = classic
-    ? ['./assets/index-CCnLQEYT.css', './room-themes.css', './manager-themes.css', './manager-glass.css']
-    : ['./room.css', './room-themes.css', './room-scene.css', './room-glass.css', './room-shelves.css', './room-reader-tools.css', './room-personalization.css', './room-workspace.css', './room-management.css'];
+  const styles = ['./room.css', './room-themes.css', './room-scene.css', './room-glass.css', './room-shelves.css', './room-reader-tools.css', './room-personalization.css', './room-workspace.css', './room-management.css'];
   for (const href of [...styles, './room-fonts.css']) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -15,30 +16,7 @@
     document.head.append(link);
   }
 
-  if (classic) {
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'manager-room-return';
-    back.textContent = '↗ 返回 3D 阅览室';
-    back.setAttribute('aria-label', '返回 3D 阅览室');
-    back.onclick = async () => {
-      try { await window.readingState.flush(); }
-      catch (error) { back.textContent = '进度尚未保存，请重试'; console.error(error); return; }
-      localStorage.setItem('reading-room-interface', 'room');
-      location.hash = '';
-      location.reload();
-    };
-    document.body.append(back);
-  }
-
-  await import(classic ? './assets/index-Db6-k1a1.js' : './room.js');
-  if (classic) {
-    // The material is optional: a graphics failure must not replace the manager.
-    (await import('./data-protection.js')).installManagerDataProtection();
-    (await import('./task-center.js')).installManagerTaskCenter();
-    try { (await import('./manager-glass.js')).initManagerGlass(); }
-    catch (error) { console.warn('Glass enhancement unavailable:', error); }
-  }
+  await import('./room.js');
 })().catch(error => {
   console.error('Interface startup failed:', error);
   const message = document.createElement('p');

@@ -1,7 +1,7 @@
 {
   "name": "yanruyu-reading-room-project",
   "private": true,
-  "version": "1.6.16",
+  "version": "2.0.0-preview.2",
   "description": "Reproducible source, isolated development and data-free packaging for the customized Yanruyu reading room",
   "license": "MIT",
   "engines": {
@@ -20,8 +20,7 @@
     "test:backup-desktop": "node tools/test-data-protection-desktop.cjs",
     "test:all": "node tools/project/test.cjs --all",
     "release:audit": "node tools/project/audit.cjs",
-    "compact": "node tools/project/compact.cjs",
-    "manager:reference": "node tools/project/manager-reference.cjs"
+    "compact": "node tools/project/compact.cjs"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.11",

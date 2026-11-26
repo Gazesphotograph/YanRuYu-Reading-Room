@@ -2,7 +2,7 @@
 
 [中文](README.md) · **English**
 
-A Windows desktop manga management and reading application customized from exhentai-manga-manager 1.6.15. Current version: **1.6.16**.
+A Windows desktop manga management and reading application customized from exhentai-manga-manager 1.6.15. Current version: **2.0.0-preview.2**.
 
 ## Screenshots
 
@@ -14,8 +14,8 @@ Tested in full-screen mode at 2560 × 1080 using a separate sample library.
 
 ## Features
 
-- **3D Bookshelf and Reading Room**: 8 themes, liquid glass interface, room layout, curated displays, ambient sounds, and reading statistics.
-- **Library Management**: Comprehensive management interface, smart bookshelf, batch organization, merging of duplicate titles, missing file checks, and undo functionality.
+- **3D Bookshelf and Reading Room**: four themes, liquid glass interface, room layout, curated displays, ambient sounds, and reading statistics.
+- **Library Management**: Library table, smart bookshelf, batch organization, merging of duplicate titles, missing file checks, and undo functionality.
 - **Local Reading**: Built-in reader, saved reading progress and preferences, book relocation, and decompression cache subject to storage capacity limits.
 - **Local Search**: Aliases, text search, and recommendations for similar books; Windows OCR requires the corresponding language recognition components to be installed on the system.
 - **Data Protection**: Backup and restore, corrupted data recovery portal, isolated data directory, and separation of development and testing environments.
@@ -51,11 +51,10 @@ The development entry point builds the current source code and locked production
 | `npm run test:all` | Full regression suite, including isolated desktop tests. Run when needed to investigate an error or explicitly requested |
 | `npm run build` | Build the application for staging, install locked production dependencies, and generate source code hashes |
 | `npm run package` | Generate a Windows x64 application directory and ZIP file without user data |
-| `npm run package -- --preview` | Generate a separately named 2.0 preview package |
+| `npm run package -- --preview` | Build in preview mode with the full application version in the filename |
 | `npm run release:audit` | Audit the data exclusion rules and file hashes of the latest release directory |
 | `npm run compact -- --current --measure` | Measure the disk space used by the current application |
 | `npm run compact -- --current` | Losslessly compress the disk space used by the current application’s runtime files |
-| `npm run manager:reference` | Compile the upstream Vue reference project separately |
 
 The test entry point installs runtime dependencies in a new staging directory. The legacy script `tools/test-desktop-gallery.cjs`, which reads the actual library, has been excluded from the unified test entry point. Test artifacts are located in the Git-ignored `tools/.artifacts/` directory or in the system temporary directory.
 
@@ -66,14 +65,12 @@ The test entry point installs runtime dependencies in a new staging directory. T
 | `resources/app/index.js`, `modules/`, `fileLoader/` | Electron main process, database, and file handling |
 | `resources/app/preload.js` | Restricted desktop interface bridge |
 | `resources/app/dist/room*.js` and associated modules, CSS | Directly executable, maintainable front-end source code for the reading room |
-| `resources/app/dist/assets/` | Preserved artifacts of the current custom management interface and the old reader |
 | `resources/app/dist/vendor/` | Bundled frontend dependencies and licenses |
-| `resources/extraResources/` | 7-Zip, external reader, and accompanying licenses |
-| `source/manager-upstream-v1.6.15/` | Separately compilable upstream Vue reference source code |
+| `resources/extraResources/` | 7-Zip and its accompanying license |
 | `tools/project/`, `tools/tests/` | Development, build, packaging, auditing, and engineering tests |
 | `docs/` | Usage, data isolation, source code origins, and engineering documentation |
 
-The uncompressed JS/CSS files in `dist/` constitute the current maintainable source code and require no additional transpilation. The complete set of local Vue modifications to the management interface and the original sourcemaps have not yet been recovered; `source/` is an upstream reference project, not the complete Vue source for this customized application. The default build preserves the current management interface artifacts; the reference build will not overwrite them. See [Source Code Provenance and Restoration Scope][provenance] for details.
+The Vue shell loads the reading room directly. Existing classic profiles open the workspace and retain their reading history. See the [acceptance matrix](docs/颜如玉2.0功能验收矩阵.md).
 
 ## Data and Release Boundaries
 
@@ -96,7 +93,7 @@ Windows NTFS file compression only reduces actual disk usage; it does not alter 
 
 This project is based on `v1.6.15` of [SchneeHertz/exhentai-manga-manager][upstream], corresponding to commit `a55570b9920da5ffdd6a698c771bbd9a9d52248f`. The upstream attribution is retained, and the customized portions are provided under the [MIT License](LICENSE).
 
-Electron, Three.js, 7-Zip, external reader, and other dependencies are subject to their respective accompanying licenses. For details on upstream sources, retained binaries, and the source recovery boundaries, see [Provenance][provenance].
+Electron, Three.js, 7-Zip, and other dependencies are subject to their respective accompanying licenses. For details on upstream sources, retained binaries, and the source recovery boundaries, see [Provenance][provenance].
 
 [releases]: https://github.com/Gazesphotograph/yanruyu-reading-room/releases
 [upstream]: https://github.com/SchneeHertz/exhentai-manga-manager

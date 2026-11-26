@@ -11,7 +11,7 @@ const { launchOptions, createFakeModel, attachFakeIpc, appURL } = require('./tes
 const app = path.resolve(__dirname, '../resources/app/dist');
 const output = path.resolve(__dirname, '.artifacts/room-aspects');
 const report = { source: 'neutral mixed-aspect covers', checks: [], errors: [], themes: [] };
-const themes = ['paper', 'glass', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid'];
+const themes = ['paper', 'glass', 'dark', 'ex'];
 const pass = name => { report.checks.push(name); console.log('PASS ' + name); };
 const definitions = [
   { name: 'PORTRAIT', w: 500, h: 707 },
@@ -143,13 +143,13 @@ async function main() {
       report.themes.push(info);
       await page.screenshot({ path: path.join(output, `mixed-${theme}.png`) });
     }
-    pass('All eight decorated themes retain twelve visible, bottom-aligned and clickable mixed-format books');
+    pass('All four decorated themes retain twelve visible, bottom-aligned and clickable mixed-format books');
 
     await page.evaluate(() => { paintTheme('glass'); scene.setTheme('glass'); });
     await settled(page);
     const baseline = await page.evaluate(() => ({ textures: scene.renderer.info.memory.textures, geometries: scene.renderer.info.memory.geometries }));
     for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => scene.setTheme('forest')); await settled(page);
+      await page.evaluate(() => scene.setTheme('dark')); await settled(page);
       await page.evaluate(() => scene.setTheme('glass')); await settled(page);
     }
     assert.deepEqual(await page.evaluate(() => ({ textures: scene.renderer.info.memory.textures, geometries: scene.renderer.info.memory.geometries })), baseline);
@@ -188,8 +188,8 @@ async function main() {
     assert.equal(await full.locator('.hero h1').textContent(), '书中自有颜如玉');
     await full.screenshot({ path: path.join(output, '颜如玉-纯白玻璃.png'), fullPage: true });
     await full.locator('[data-action="theme"]').first().click();
-    await full.locator('[data-theme-choice="forest"]').click(); await full.keyboard.press('Escape');
-    await full.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneTheme === 'forest' && [...document.querySelectorAll('.scene-book-target')].every(button => button.dataset.coverState !== 'loading'));
+    await full.locator('[data-theme-choice="dark"]').click(); await full.keyboard.press('Escape');
+    await full.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneTheme === 'dark' && [...document.querySelectorAll('.scene-book-target')].every(button => button.dataset.coverState !== 'loading'));
     await full.waitForTimeout(400);
     await full.screenshot({ path: path.join(output, '颜如玉-林间月光.png'), fullPage: true });
     await full.locator('.scene-book-target').nth(1).click();

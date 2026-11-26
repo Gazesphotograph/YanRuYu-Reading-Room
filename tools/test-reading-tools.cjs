@@ -30,7 +30,7 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     const books = ['reader-a', 'reader-b'].map((id, index) => ({ id, title: `Neutral reading tools ${index + 1}`, type: 'folder',
       filepath: path.join(directory, id), coverPath: pages[index].absolutePath, pageCount: 70, readCount: 0,
       tags: {}, mark: false, hiddenBook: false, exist: true, status: 'non-tag', date: index + 1 }));
-    const setting = { library: directory, imageExplorer: '', reverseLeftRight: false };
+    const setting = { library: directory, imageExplorer: '', reverseLeftRight: false, autoNextManga: true };
     let store = createReadingStateStore({ storePath: directory }), uiState = null;
     browser = await chromium.launch({ channel: 'msedge', headless: true, args: ['--allow-file-access-from-files', '--enable-unsafe-swiftshader'] });
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -175,6 +175,19 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     }
     pass('The toolbars, page input and thumbnail panel fit 640px and 420px windows');
     await close();
+    await page.selectOption('#sort','title');
+    await page.locator('#room [data-book="reader-a"]').dblclick();
+    await anchor(40);
+    await jump(70);
+    await page.locator('[data-action="page-next"]').click();
+    await page.locator('.reader-title').filter({hasText:books[1].title}).waitFor();
+    await anchor(1);
+    await page.getByText('书页与切换',{exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'下一本',exact:true}).isDisabled(),true);
+    await page.getByRole('button',{name:'上一本',exact:true}).click();
+    await anchor(70);
+    await close();
+    pass('Last-page advance and previous-book navigation follow the sorted library and resume each book');
     const unexpected = diagnostics.filter(value => !/net::ERR_FAILED|Failed to load resource|WebGL|THREE\.|Synthetic preference disk failure/.test(value));
     assert.equal(unexpected.length, 0, unexpected.join('\n'));
     console.log(`${checks.length} reading-tool integration checks passed using isolated synthetic content`);

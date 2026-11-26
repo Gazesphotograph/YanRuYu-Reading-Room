@@ -1,6 +1,6 @@
 'use strict';
 
-// Runs both real renderer bundles with synthetic pages and a real temporary
+// Opens a saved classic profile in the current renderer with a real temporary
 // reading-state store. No connection is made to the desktop app or user data.
 const { chromium } = require('./playwright-runtime.cjs');
 const assert = require('node:assert/strict');
@@ -53,7 +53,8 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
       if (channel === 'save-book') { assert.equal(args[0].id, id); Object.assign(book, args[0]); return book; }
       if (channel === 'load-manga-image-list') { assert.equal(args[0].id, id); return pages; }
       if (channel === 'load-collection-list') return [];
-      if (channel === 'get-folder-tree') return [];
+      if (['get-folder-tree','task-list'].includes(channel)) return [];
+      if (channel === 'local-search-command') return { aliases: [] };
       if (channel === 'get-locale') return 'zh-CN';
       if (channel === 'window-is-maximized') return false;
       if (['release-sendimagelock', 'set-progress-bar', 'update-window-title', 'update-tag-translation', 'window-minimize', 'window-close'].includes(channel)) return null;
@@ -64,26 +65,11 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
         for (const [key, value] of Object.entries(originalLegacy)) localStorage.setItem(key, value);
         localStorage.setItem('reading-fixture-seeded', 'true');
         localStorage.setItem('imageStyleType', 'single');
+        localStorage.setItem('reading-room-interface', 'classic');
+        localStorage.setItem('imageStyleFit', 'width');
         localStorage.setItem('room-view', '"grid"');
       }
-      const callbacks = new Map();
-      window.ipcRenderer = {
-        async invoke(channel, ...args) {
-          const result = await window.__readingFixtureInvoke(channel, args);
-          if (channel === 'load-manga-image-list' && args[1]?.backgroundProcessing !== false) {
-            const book = args[0];
-            result.forEach((image, offset) => setTimeout(() => {
-              const payload = { ...image, filepath: image.absolutePath, id: `${book.id}_${offset + 1}`, index: offset + 1, total: result.length };
-              callbacks.get('manga-image')?.(null, payload);
-              callbacks.get('manga-thumbnail-image')?.(null, { ...payload, thumbnailPath: image.absolutePath, thumbId: `thumb_${payload.id}` });
-            }, 40 + offset * 15));
-          }
-          return result;
-        },
-        on(channel, callback) { callbacks.set(channel, callback); },
-        sendSync(channel) { if (channel === 'get-path-sep') return '\\'; throw Error(channel); }
-      };
-      window.electronFunction = { 'get-zoom-level': () => 0, 'set-zoom-level': () => {}, 'insert-css': () => {} };
+      window.ipcRenderer = { invoke: (channel, ...args) => window.__readingFixtureInvoke(channel,args), on() {} };
     }, { originalLegacy });
     const page = await context.newPage();
     activePage = page;
@@ -103,36 +89,15 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     await page.waitForFunction(() => !document.querySelector('.reader'));
     assert.equal((await store.load()).progress[id].page, 9);
     console.log('PASS closing the room reader acknowledges page 9 on disk');
-    await page.locator('[data-action="settings"]').click();
-    const roomBeforeClassic=await store.load();
-    await page.getByRole('button', { name: '打开完整管理界面', exact: true }).click();
-    await page.locator('.book-cover-frame img').waitFor();
-    await page.locator('.book-cover-frame img').click();
-    await page.waitForFunction(() => { const image = document.querySelector('.drawer-viewer-body img'); return image?.src.split('?')[0].endsWith('page-09.svg') && image.complete && image.naturalWidth > 0; });
-    await page.evaluate(()=>window.readingState.flush());
-    const classicVisit=await store.load();
-    assert.equal(classicVisit.visits[id].source,'classic');
-    assert(classicVisit.visits[id].time>=roomBeforeClassic.visits[id].time);
-    assert.equal(classicVisit.progress[id].time,roomBeforeClassic.progress[id].time,'Opening the same page updates the visit without moving the saved position');
-    console.log('PASS the actual classic reader resumes room page 9');
-    await page.keyboard.press('ArrowRight');
-    await page.waitForFunction(() => { const image = document.querySelector('.drawer-viewer-body img'); return image?.src.split('?')[0].endsWith('page-10.svg') && image.complete && image.naturalWidth > 0; });
-    await page.locator('.viewer-mode-setting').getByText('单页', { exact: true }).click();
-    await page.getByRole('option', { name: '双页', exact: true }).click();
-    await page.waitForFunction(id => window.readingState.classicReader?.()?.visiblePageIds?.includes(`${id}_10`), id);
-    await page.evaluate(() => window.readingState.flush());
-    assert.equal((await store.load()).progress[id].page, 10);
-    assert.equal((await store.load()).preferences[id].mode, 'double');
-    console.log('PASS classic double-page display preserves the requested page 10 anchor');
-    await page.keyboard.press('Escape');
-    await page.waitForFunction(() => ![...document.querySelectorAll('.drawer-viewer-body')].some(element => element.offsetParent));
-    await page.getByRole('button', { name: '返回 3D 阅览室', exact: true }).click();
-    await page.locator(`#room [data-book="${id}"]`).waitFor();
-    assert.equal((await store.load()).progress[id].page, 10);
+    assert.equal(await page.locator('[data-action="classic"]').count(), 0);
+    assert.equal(await page.locator('.workspace-nav').isVisible(), true);
     await page.locator(`#room [data-book="${id}"]`).dblclick();
-    await page.waitForFunction(() => document.querySelector('#reader-page')?.textContent === '10 / 12');
-    assert.equal(await page.getByLabel('阅读模式').inputValue(),'double','The original reader and 2.0 share the saved book mode');
-    console.log('PASS the last five classic pages no longer reset and room resumes page 10');
+    await page.waitForFunction(() => document.querySelector('#reader-page')?.textContent === '9 / 12');
+    assert.equal(await page.getByLabel('页面显示方式').inputValue(), 'width');
+    await page.getByLabel('阅读模式').selectOption('double');
+    await page.locator('#reader-page-input').fill('10');
+    await page.locator('#reader-page-input').press('Enter');
+    await page.waitForFunction(() => document.querySelector('[data-reader-page="10"] img')?.naturalWidth > 0);
     await page.locator('[data-action="exit-reader"]').click();
     await page.waitForFunction(() => !document.querySelector('.reader'));
     const stored = JSON.parse(await fs.readFile(store.filePath, 'utf8'));
@@ -143,28 +108,15 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     await page.locator(`#room [data-book="${id}"]`).waitFor();
     assert.equal(await page.evaluate(id => window.readingState.get(id).page, id), 10);
     console.log('PASS restarting the main profile and renderer preserves page 10 and migration originals');
-    await page.evaluate(({ id }) => {
-      const reader = { store: { pageList: [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11]], activePageIndex: 0 },
-        props: { show: true, imgList: Array(12).fill('neutral') }, goto(index) { this.store.activePageIndex = index; } };
-      window.__comicFixture = reader;
-      window.readingState.attachComicReader(reader, { id, pageCount: 12 });
-    }, { id });
-    await page.waitForFunction(() => window.__comicFixture.store.activePageIndex === 4 && window.readingState.comic.ready);
-    await page.evaluate(() => window.readingState.flush());
-    assert.equal((await store.load()).progress[id].page, 10);
-    console.log('PASS ComicRead double-page display preserves the requested page 10 anchor');
-    assert.equal((await store.load()).visits[id].source,'comicread');
-    await page.evaluate(async () => { window.__comicFixture.store.pageList = [[0], [1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11]]; window.__comicFixture.store.activePageIndex = 6; await window.readingState.flush(); window.readingState.closeComicReader(); });
-    assert.equal((await store.load()).progress[id].page, 12);
-    console.log('PASS ComicRead zero-based spread indices convert to one-based book pages');
+    assert.equal((await store.load()).preferences[id].mode, 'double');
     assert.equal(diagnostics.filter(value => !/net::ERR_FAILED|Failed to load resource|WebGL|THREE\./.test(value)).length, 0, diagnostics.join('\n'));
     await context.close();
-    console.log('8 reading bridge checks passed with isolated synthetic content');
+    console.log('Reading migration and restart passed with isolated synthetic content');
   } catch (error) {
     console.error(diagnostics.join('\n'));
     if (activePage && !activePage.isClosed()) console.error(await activePage.evaluate(() => JSON.stringify({
-      text: document.body.innerText.slice(-1200), images: [...document.querySelectorAll('.drawer-viewer-body img')].map(image => ({ src: image.src, complete: image.complete, width: image.naturalWidth })),
-      classic: window.readingState?.classicReader?.(), progress: window.readingState?.progress
+      text: document.body.innerText.slice(-1200), images: [...document.querySelectorAll('.reader-body img')].map(image => ({ src: image.src, complete: image.complete, width: image.naturalWidth })),
+      progress: window.readingState?.progress
     })));
     throw error;
   } finally {

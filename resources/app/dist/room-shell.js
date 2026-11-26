@@ -21,7 +21,6 @@ export function shellMarkup(icon) {
       <button class="nav-btn" data-action="personalization" title="布置私人阅览室" aria-label="布置私人阅览室">${icon('shelf')}<span>私人阅览室</span></button>
       <button class="nav-btn" data-action="library" title="选择书库文件夹">${icon('folder')}<span>书库文件夹</span></button>
       <div class="sidebar-bottom">
-        <button class="nav-btn" data-action="classic" title="完整管理界面">${icon('grid')}<span>完整管理界面</span></button>
         <button class="nav-btn" data-action="settings" title="阅览室设置">${icon('settings')}<span>阅览室设置</span></button>
         <div class="library-note"><span class="status-dot"></span>本地私人书库<br><span id="local-count">正在整理书架…</span></div>
       </div>

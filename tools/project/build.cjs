@@ -18,8 +18,6 @@ function build() {
     copyFile(file, target);
     sourceHashes[`resources/app/${relative.replaceAll(path.sep, '/')}`] = sha256(target);
   }
-  // Native JavaScript/CSS is the source. Copying is intentional; never rebuild the
-  // customized classic manager from the incomplete upstream recovery tree.
   for (const filename of extras) {
     const relative = path.join('resources', 'extraResources', filename);
     const file = path.join(root, relative);
@@ -38,7 +36,7 @@ function build() {
     electronVersion: require('../../package.json').devDependencies.electron,
     platform: process.platform,
     architecture: process.arch,
-    sourceKind: 'customized-runtime-source-with-preserved-manager-bundle',
+    sourceKind: 'vue-shell-and-native-reading-room',
     upstreamTag: 'v1.6.15',
     upstreamCommit: 'a55570b9920da5ffdd6a698c771bbd9a9d52248f',
     sourceHashes,

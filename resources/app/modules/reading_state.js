@@ -16,7 +16,6 @@ function validBookId(id) {
 }
 
 // Public page numbers, legacy image IDs, and this file all use a ONE-based index.
-// Only ComicRead's internal image/page arrays are zero-based (converted by the bridge).
 function normalizeProgress(progress) {
   if (!isObject(progress) || !Number.isSafeInteger(progress.page) || !Number.isSafeInteger(progress.total) ||
       progress.page < 1 || progress.total < 1 || progress.total > MAX_PAGE_COUNT) {

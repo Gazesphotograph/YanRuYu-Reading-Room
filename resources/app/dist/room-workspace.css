@@ -7,7 +7,6 @@
 .filtered-book-notice button[hidden],
 .setting-row[hidden],
 .nav-btn[data-action="personalization"][hidden],
-.nav-btn[data-action="classic"][hidden],
 .shelf-tools [data-action="catalog-filter"][hidden] { display: none; }
 
 .shelf-tools [data-action="catalog-filter"] { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

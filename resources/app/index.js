@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, dialog, shell, screen, Menu, clipboard, nativeImage, Tray } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog, shell, Menu, clipboard, nativeImage, Tray } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { brotliDecompress } = require('zlib')
@@ -40,8 +40,7 @@ const { getBookFilelist, geneCover, getImageListByBook, deleteImageFromBook,
 const {
   STORE_PATH, isPortable,
   TEMP_PATH, COVER_PATH, VIEWER_PATH,
-  prepareSetting, prepareCollectionList, preparePath,
-  _mange_reader
+  prepareSetting, prepareCollectionList, preparePath
 } = require('./modules/init_folder_setting.js')
 const { resolvePortableSetting } = require('./modules/portable_paths')
 const appIconPath = path.join(__dirname, 'public', process.platform === 'win32' ? 'icon.ico' : 'icon.png')
@@ -139,9 +138,7 @@ let mainWindow
 let tray
 let isQuitting = false
 let revealWindowWhenReady = false
-let screenWidth
 let readerGeneration = 0
-let readerTask = Promise.resolve()
 let readerExtractionTaskId = null
 const readerQueue = serialQueue()
 const libraryQueue = serialQueue()
@@ -382,12 +379,11 @@ const createWindow = () => {
 app.whenReady().then(async () => {
   // The tray belongs to the app lifetime, independently of window hide settings.
   createTray()
-  const primaryDisplay = screen.getPrimaryDisplay()
-  screenWidth = Math.floor(primaryDisplay.workAreaSize.width * primaryDisplay.scaleFactor)
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)
   try { await Promise.all([schemaReady, readingState.ready, libraryOrganizer?.ready]) }
   catch { revealWindowWhenReady = true }
+  if (!isQuitting && setting.enabledLANBrowsing) enableLANBrowsing()
   if (!isQuitting && (!mainWindow || mainWindow.isDestroyed())) mainWindow = createWindow()
 })
 app.on('activate', () => {
@@ -969,10 +965,6 @@ ipcMain.handle('open-local-book', async (_event, filepath, options = {}) => {
   return openLocalBook(filepath, book)
 })
 
-ipcMain.handle('get-default-manga-reader', async (event, arg) => {
-  return _mange_reader
-})
-
 ipcMain.handle('delete-local-book', async (event, filepath) => {
   let recycledImages = 0
   let filesRecycled = false
@@ -1057,112 +1049,32 @@ ipcMain.handle('move-local-book', async (event, oldPath, folderArr) => {
 })
 
 // viewer
-ipcMain.handle('load-manga-image-list', async (event, book, options) => {
+ipcMain.handle('load-manga-image-list', async (_event, book) => {
   const generation = ++readerGeneration
   if (readerExtractionTaskId) await taskService.cancel(readerExtractionTaskId)
-  const backgroundProcessing = options?.backgroundProcessing !== false
   return readerQueue(async () => {
-  await readerTask
-  await releaseImageCache?.('desktop-reader')
-  if (generation !== readerGeneration) return []
-  const renderPath = path.join(VIEWER_PATH, 'desktop-render')
-  if (backgroundProcessing) await clearFolder(renderPath)
-
-  const { filepath, type, id: bookId } = book
-  const extraction = await taskService.start('extract', { filepath, type, bookId, owner: 'desktop-reader' })
-  readerExtractionTaskId = extraction.id
-  if (generation !== readerGeneration) await taskService.cancel(extraction.id)
-  let list
-  try { list = await taskService.wait(extraction.id) }
-  catch (error) {
-    if (generation !== readerGeneration || error.name === 'AbortError' || error.code === 'ABORT_ERR') return []
-    throw error
-  } finally { if (readerExtractionTaskId === extraction.id) readerExtractionTaskId = null }
-  if (!Array.isArray(list)) return []
-
-  if (generation !== readerGeneration) return []
-  // The reading room decodes visible originals itself; legacy readers still
-  // receive the processed page and thumbnail events unless they opt out.
-  if (!backgroundProcessing) return list
-  readerTask = (async () => {
-    // 384 is the default 4K screen width divided by the default number of thumbnail columns
-    const thumbnailWidth = Math.max(32, Math.min(1024, Math.floor(screenWidth / Math.max(1, Number(setting.thumbnailColumn) || 10))))
-    const widthLimit = setting.widthLimit === 0 ? 0 : Math.max(1, Math.min(16384, Number(setting.widthLimit) || screenWidth))
-    for (let index = 1; index <= list.length; index++) {
-      if (generation !== readerGeneration) break
-      // 单页解码失败原先会中断整个循环,后面的页再也不会发出去
-      try {
-        let imageFilepath = list[index - 1].absolutePath
-        const extname = path.extname(imageFilepath).toLowerCase()
-        if (imageFilepath.search(/[%#]/) >= 0) {
-          const newFilepath = path.join(renderPath, `rename_${nanoid(8)}${extname}`)
-          await fs.promises.copyFile(imageFilepath, newFilepath)
-          imageFilepath = newFilepath
-        }
-        let { width, height } = await sharp(imageFilepath, { failOnError: false }).metadata()
-        if (widthLimit !== 0 && width > widthLimit) {
-          height = Math.floor(height * (widthLimit / width))
-          width = widthLimit
-          const resizedFilepath = path.join(renderPath, `resized_${nanoid(8)}.jpg`)
-          switch (extname) {
-            case '.gif':
-              break
-            default:
-              await sharp(imageFilepath, { failOnError: false })
-                .resize({ width })
-                .toFile(resizedFilepath)
-              imageFilepath = resizedFilepath
-              break
-          }
-        }
-        if (generation !== readerGeneration) break
-        mainWindow.webContents.send('manga-image', {
-          id: `${bookId}_${index}`,
-          index,
-          relativePath: list[index - 1].relativePath,
-          filepath: imageFilepath,
-          width, height,
-          total: list.length
-        })
-        if (setting.viewerType !== 'comicread') {
-          await (async () => {
-            let thumbnailPath = path.join(renderPath, `thumb_${nanoid(8)}.jpg`)
-            switch (extname) {
-              case '.gif':
-                thumbnailPath = imageFilepath
-                break
-              default:
-                await sharp(imageFilepath, { failOnError: false })
-                  .resize({ width: thumbnailWidth })
-                  .toFile(thumbnailPath)
-                break
-            }
-            if (generation !== readerGeneration) return
-            mainWindow.webContents.send('manga-thumbnail-image', {
-              id: `${bookId}_${index}`,
-              thumbId: `thumb_${bookId}_${index}`,
-              index,
-              relativePath: list[index - 1].relativePath,
-              filepath: imageFilepath,
-              thumbnailPath,
-              total: list.length
-            })
-          })().catch(e => console.error(`Thumbnail for ${list[index - 1].relativePath} failed: ${e}`))
-        }
-      } catch (e) {
-        sendMessageToWebContents(`Load image ${list[index - 1].relativePath} failed because ${e}`)
-      }
+    await releaseImageCache?.('desktop-reader')
+    if (generation !== readerGeneration) return []
+    const { filepath, type, id: bookId } = book
+    const extraction = await taskService.start('extract', { filepath, type, bookId, owner: 'desktop-reader' })
+    readerExtractionTaskId = extraction.id
+    try {
+      if (generation !== readerGeneration) await taskService.cancel(extraction.id)
+      const pages = await taskService.wait(extraction.id)
+      return generation === readerGeneration && Array.isArray(pages) ? pages : []
+    } catch (error) {
+      if (generation !== readerGeneration || error.name === 'AbortError' || error.code === 'ABORT_ERR') return []
+      throw error
+    } finally {
+      if (readerExtractionTaskId === extraction.id) readerExtractionTaskId = null
     }
-  })().catch(error => console.error('Reader task failed:', error))
-
-  return list
   })
 })
 
 ipcMain.handle('release-sendimagelock', async () => {
   readerGeneration++
   if (readerExtractionTaskId) await taskService.cancel(readerExtractionTaskId)
-  await readerQueue(async () => { await readerTask; await releaseImageCache?.('desktop-reader') })
+  await readerQueue(() => releaseImageCache?.('desktop-reader'))
 })
 
 ipcMain.handle('delete-image', async (event, filename, filepath, type) => {
@@ -1319,7 +1231,7 @@ async function pauseForRestore() {
   dataRestoreInProgress = true
   await taskService.stopAll({ wait: false }).catch(error => console.error('Task cancellation history:', error))
   ++readerGeneration
-  await readerQueue(async () => { await readerTask })
+  await readerQueue(async () => {})
   const closed = await Promise.allSettled([Manga.sequelize.close(), Metadata.sequelize.close()])
   const failure = closed.find(result => result.status === 'rejected')
   if (failure) throw failure.reason
@@ -1412,7 +1324,7 @@ ipcMain.handle('import-database', async (_event, files = {}) => {
 ipcMain.handle('archive-recovery-list', () => listArchiveRecoveryPoints(STORE_PATH))
 ipcMain.handle('archive-recovery-restore', async (_event, id) => {
   ++readerGeneration
-  await readerQueue(async () => { await readerTask })
+  await readerQueue(async () => {})
   const result = await restoreArchiveRecoveryPoint(STORE_PATH, id, { libraryPath: setting.library })
   let generatedCover, retainedCover
   try {

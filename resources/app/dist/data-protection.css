@@ -46,8 +46,6 @@
 .data-protection-dialog .protection-point:last-child { border-bottom: 0; padding-bottom: 0; }
 .data-protection-dialog .protection-point strong { display: block; overflow-wrap: anywhere; }
 .data-protection-dialog .protection-point button { margin: 10px 8px 0 0; }
-.manager-data-protection { bottom: 72px !important; }
-@media (max-width: 900px) { .manager-data-protection { bottom: 103px !important; } }
 @media (max-width: 650px), (max-height: 600px) {
   .data-protection-dialog { padding: 20px; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
   .data-protection-dialog header { gap: 12px; margin-bottom: 15px; }

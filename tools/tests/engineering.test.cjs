@@ -78,12 +78,15 @@ test('invalid explicit path fails closed without silently choosing the live libr
   assert.equal(fs.readFileSync(file, 'utf8'), 'sentinel');
 }));
 
-test('build source list contains custom reader and classic manager', () => {
+test('build contains the standalone reading room and excludes retired renderers', () => {
   const sources = listSourceFiles().map(file => file.replaceAll(path.sep, '/'));
-  for (const suffix of ['/dist/room.js', '/dist/room-entry.js', '/dist/room-scene.js', '/dist/manager-theme.js', '/dist/assets/index-Db6-k1a1.js']) {
+  for (const suffix of ['/dist/room.js', '/dist/room-entry.js', '/dist/room-scene.js', '/dist/reading-state.js']) {
     assert.ok(sources.some(file => file.endsWith(suffix)), suffix);
   }
   assert.ok(sources.every(file => !file.includes('/node_modules/')));
+  assert.equal(fs.existsSync(path.join(__dirname, '../../resources/extraResources/manga_reader.exe')), false);
+  assert.deepEqual(sources.filter(file => /\/dist\/(?:assets\/|manager-)|ComicReader\.umd/i.test(file)), []);
+
 });
 
 test('release privacy filter excludes databases, settings, credentials and browser profiles', () => {

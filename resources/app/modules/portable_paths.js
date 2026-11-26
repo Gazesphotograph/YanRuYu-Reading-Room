@@ -16,10 +16,6 @@ function resolvePortableSetting(setting, root) {
       } catch {}
     }
   }
-  const reader = String(setting.imageExplorer || '').replace(/^"|"$/g, '')
-  if (path.basename(reader).toLowerCase() === 'manga_reader.exe' && !fs.existsSync(reader)) {
-    resolved.imageExplorer = '"' + path.join(root, 'resources/extraResources/manga_reader.exe') + '"'
-  }
   return resolved
 }
 

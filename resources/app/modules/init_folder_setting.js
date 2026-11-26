@@ -1,7 +1,6 @@
 const { app } = require('electron')
 const fs = require('fs')
 const path = require('path')
-const { getRootPath } = require('./utils.js')
 const { resolveDataPaths } = require('./data_paths.js')
 
 
@@ -22,8 +21,6 @@ const preparePath = () => {
   fs.mkdirSync(VIEWER_PATH, { recursive: true })
 }
 
-const _mange_reader = `"${path.join(getRootPath(), 'resources/extraResources/manga_reader.exe')}"`
-
 const SETTING_PATH = path.join(STORE_PATH, 'setting.json')
 const COLLECTION_PATH = path.join(STORE_PATH, 'collectionList.json')
 
@@ -38,7 +35,7 @@ const prepareSetting = () => {
     proxy: undefined,
     library: app.getPath('downloads'),
     metadataPath: undefined,
-    imageExplorer: _mange_reader,
+    imageExplorer: '',
     pageSize: 42,
     loadOnStart: false,
     igneous: '',
@@ -80,9 +77,10 @@ const prepareSetting = () => {
   try {
     // 去掉 BOM,否则 JSON.parse 失败会导致整份设置被默认值覆盖
     const setting = JSON.parse(raw.replace(/^\uFEFF/, ''))
-    if (setting.imageExplorer === '"C:\\Windows\\explorer.exe"') {
-      setting.imageExplorer = _mange_reader
-      writeJsonAtomic(SETTING_PATH, setting)
+    // Match the bundled program across moved installations, leaving user-selected executables alone.
+    const reader = String(setting.imageExplorer || '').trim().replace(/^"|"$/g, '').replaceAll('\\', '/')
+    if (/\/resources\/extraResources\/manga_reader\.exe$/i.test(reader) || /^c:\/windows\/explorer\.exe$/i.test(reader)) {
+      setting.imageExplorer = ''
     }
     return setting
   } catch (e) {
@@ -126,5 +124,4 @@ module.exports = {
   prepareSetting,
   prepareCollectionList,
   preparePath,
-  _mange_reader,
 }

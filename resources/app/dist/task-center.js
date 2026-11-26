@@ -105,14 +105,7 @@ export async function openTaskCenter() {
   dialog.showModal(); render(); await refresh();
 }
 
-export function installManagerTaskCenter() {
-  ensureStyles();
-  if (document.querySelector('.manager-task-center')) return;
-  const button = document.createElement('button'); button.type = 'button'; button.className = 'manager-room-return manager-task-center';
-  button.innerHTML = '任务中心 <span data-task-center-count hidden></span>';
-  button.addEventListener('click', () => openTaskCenter()); document.body.append(button);
-  updateTasks(tasks);
-}
+
 
 window.YanruyuTasks = {
   open: openTaskCenter,
@@ -126,9 +119,7 @@ window.YanruyuTasks = {
   get tasks() { return tasks; }
 };
 
-// The two readers handle Escape globally. A native dialog can temporarily lose
-// its focused button while a task update replaces a row, so handle its Escape
-// before either reader sees the key, including that focus-transition frame.
+// A refresh can replace the focused task. Handle Escape before reader shortcuts.
 window.addEventListener('keydown', event => {
   if (!dialog?.open || event.key !== 'Escape') return;
   event.preventDefault(); event.stopImmediatePropagation(); dialog.close();

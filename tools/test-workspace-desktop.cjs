@@ -443,9 +443,9 @@ async function main() {
     await page.locator('[data-action="settings"]').click();
     await page.getByRole('button', { name: '返回原界面' }).click();
     await close(); await launch();
-    await page.locator('[data-action="classic"]').waitFor();
+    await page.locator('[data-action="settings"]').waitFor();
     assert.equal(await page.locator('.workspace-nav').isVisible(), false);
-    assert.equal(await page.locator('[data-action="classic"]').isVisible(), true);
+    assert.equal(await page.locator('[data-action="classic"]').count(), 0);
     for (const [filename, digest] of originals) assert.equal(sha256(filename), digest);
     assert.deepEqual(errors, []);
     console.log('PASS Preview can be disabled, all original image hashes are intact, and the renderer reports no uncaught errors');

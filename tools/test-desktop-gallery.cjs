@@ -20,12 +20,12 @@ const checks=[],errors=[];const pass=name=>{checks.push(name);console.log('PASS 
     assert(await page.evaluate(()=>!!document.activeElement?.dataset.book));pass('Real book details open and return keyboard focus');
     const originalTheme=await page.locator('html').getAttribute('data-room-theme');
     await page.locator('[data-action="theme"]').first().click();
-    for(const theme of ['paper','forest','hub','ex','terminal','neon','acid','glass']){
+    for(const theme of ['paper','dark','ex','glass']){
       await page.locator(`[data-theme-choice="${theme}"]`).click();
       assert.equal(await page.locator('.scene-viewport').getAttribute('data-scene-theme'),theme);
       assert.equal(await page.locator('.scene-viewport').getAttribute('data-scene-state'),'ready');
     }
-    await page.locator(`[data-theme-choice="${originalTheme}"]`).click();await page.keyboard.press('Escape');pass('All eight material and interface themes apply in the desktop app');
+    await page.locator(`[data-theme-choice="${originalTheme}"]`).click();await page.keyboard.press('Escape');pass('All four material and interface themes apply in the desktop app');
     selected=books.filter(book=>!book.hiddenBook&&book.filepath&&fs.existsSync(book.filepath)).sort((a,b)=>(a.bundleSize||0)-(b.bundleSize||0))[0];
     if(selected){
     originalCount=selected.readCount;
@@ -59,9 +59,6 @@ const checks=[],errors=[];const pass=name=>{checks.push(name);console.log('PASS 
       await page.locator('[data-view="grid"]').click();
     }
     await page.locator('#search').fill('');
-    await page.locator('[data-action="classic"]').click({noWaitAfter:true});
-    await page.waitForFunction(()=>!document.querySelector('.shell')&&document.querySelector('#app')?.children.length>0,{},{timeout:30000});
-    await page.getByRole('button',{name:'返回 3D 阅览室',exact:true}).click({noWaitAfter:true});await page.waitForSelector('#room [data-book]');pass('Full management interface and return work');
     await page.locator('[data-view="shelf"]').click();await page.waitForSelector('.scene-viewport[data-scene-state="ready"]');
     const size=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentSize());
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(720,700));

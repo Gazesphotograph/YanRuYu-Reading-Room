@@ -2,7 +2,7 @@
 
 **中文** · [English](README.en.md)
 
-基于 exhentai-manga-manager 1.6.15 定制的 Windows 桌面漫画管理与阅读应用。当前版本：**1.6.16**。
+基于 exhentai-manga-manager 1.6.15 定制的 Windows 桌面漫画管理与阅读应用。当前版本：**2.0.0-preview.2**。
 
 ## 界面预览
 
@@ -14,8 +14,8 @@
 
 ## 功能
 
-- **3D 书架与阅览室**：8 套主题、液态玻璃界面、房间布置、精选陈列、环境音与阅读统计。
-- **书库管理**：完整管理界面、智能书架、批量整理、重复书目合并、缺失文件检查与可撤销操作。
+- **3D 书架与阅览室**：4 套主题、液态玻璃界面、房间布置、精选陈列、环境音与阅读统计。
+- **书库管理**：书库表格、智能书架、批量整理、重复书目合并、缺失文件检查与可撤销操作。
 - **本地阅读**：内置阅读器、阅读进度与偏好保存、书籍重新定位、受容量预算约束的解压缓存。
 - **本地检索**：别名、文本搜索、相似书推荐；Windows OCR 需要系统已安装相应语言的识别组件。
 - **数据保护**：备份与恢复、损坏数据恢复入口、独立的数据目录、开发与测试隔离。
@@ -53,11 +53,10 @@ npm run dev
 | `npm run test:all` | 全量回归，包含隔离桌面测试。仅在排查报错需要扩大范围或用户明确要求时运行 |
 | `npm run build` | 构建应用 staging，安装锁定生产依赖并生成源码哈希 |
 | `npm run package` | 生成不含用户数据的 Windows x64 程序目录与 ZIP |
-| `npm run package -- --preview` | 生成单独命名的 2.0 预览包 |
+| `npm run package -- --preview` | 按预览模式打包，文件名包含完整应用版本 |
 | `npm run release:audit` | 复核最近发布目录的数据排除规则与文件哈希 |
 | `npm run compact -- --current --measure` | 测量当前程序的磁盘占用 |
 | `npm run compact -- --current` | 无损压缩当前程序运行文件的磁盘占用 |
-| `npm run manager:reference` | 单独编译上游 Vue 参考工程 |
 
 测试入口会在新 staging 安装运行依赖。历史脚本 `tools/test-desktop-gallery.cjs` 会读取真实书库，已从统一测试入口排除。测试产物位于被 Git 忽略的 `tools/.artifacts/` 或系统临时目录。
 
@@ -70,14 +69,12 @@ npm run dev
 | `src/renderer/` | 新前端（Vue 3 + Pinia + TypeScript，Vite 构建）。UI 重构期间由它启动并承载原生界面，各页面逐步迁入 |
 | `resources/app/dist/app/` | `src/renderer` 的构建产物，被 Git 忽略，勿手改 |
 | `resources/app/dist/room*.js` 与配套模块、CSS | 原生阅览室前端源码，重构期间逐步迁入 `src/renderer` |
-| `resources/app/dist/assets/` | 当前定制管理界面与旧阅读器的保留产物 |
 | `resources/app/dist/vendor/` | 随附前端依赖及许可证 |
-| `resources/extraResources/` | 7-Zip、外部阅读器及随附许可证 |
-| `source/manager-upstream-v1.6.15/` | 可单独编译的上游 Vue 参考源码 |
+| `resources/extraResources/` | 7-Zip 及随附许可证 |
 | `tools/project/`、`tools/tests/` | 开发、构建、打包、审计与工程测试 |
 | `docs/` | 使用、数据隔离、源码来源与工程文档 |
 
-`dist/` 中未压缩的 JS/CSS 本身就是当前可维护源码，无需额外转译。管理界面的全部本地 Vue 修改和原 sourcemap 尚未恢复，`source/` 是上游参考工程，不能等同于定制版本的完整 Vue 源码。默认构建保留当前管理界面产物；参考构建不会覆盖它。详见 [源码来源与恢复范围][provenance]。
+当前界面由可构建的 Vue 入口和阅览室 JS/CSS 组成。旧配置中的经典入口会自动打开新工作区，旧进度会按书籍 ID 迁入。详见[功能验收矩阵](docs/颜如玉2.0功能验收矩阵.md)。
 
 ## 数据与发布边界
 
@@ -100,7 +97,7 @@ Windows NTFS 文件压缩仅减少实际磁盘占用，不改变文件内容或�
 
 本项目基于 [SchneeHertz/exhentai-manga-manager][upstream] 的 `v1.6.15`，对应提交 `a55570b9920da5ffdd6a698c771bbd9a9d52248f`。保留上游署名，定制部分按 [MIT License](LICENSE) 提供。
 
-Electron、Three.js、7-Zip、外部阅读器及其他依赖遵循各自随附的许可证。上游来源、保留二进制与源码恢复边界详见 [来源说明][provenance]。
+Electron、Three.js、7-Zip 及其他依赖遵循各自随附的许可证。上游来源、保留二进制与源码恢复边界详见 [来源说明][provenance]。
 
 [releases]: https://github.com/Gazesphotograph/yanruyu-reading-room/releases
 [upstream]: https://github.com/SchneeHertz/exhentai-manga-manager

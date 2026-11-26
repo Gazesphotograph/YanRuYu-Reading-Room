@@ -82,7 +82,7 @@ const waitCount=(page,count)=>page.waitForFunction(count=>document.querySelector
 
     await page.locator('#continuous-reading').check();await primary.click();
     await page.waitForSelector('.continuous-page.is-loaded');
-    const options=model.calls.filter(c=>c.channel==='load-manga-image-list').at(-1).args[1];assert.equal(options.backgroundProcessing,false);
+    assert.equal(model.calls.filter(c=>c.channel==='load-manga-image-list').at(-1).args.length,1);
     const imageCounts=[];
     for(const pageNumber of [60,6,110,4,90,2]){
       await page.locator('#page-slider').fill(String(pageNumber));

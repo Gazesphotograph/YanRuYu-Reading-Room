@@ -13,6 +13,9 @@ function auditRelease(folder) {
     // Dependencies come from npm ci in a new staging directory, never from a
     // user's installation. Sample dependency fixtures are not application data.
     if (relative.startsWith('resources/app/node_modules/')) continue;
+    if (relative.toLowerCase() === 'resources/extraresources/manga_reader.exe' || /^resources\/app\/dist\/(?:assets\/|manager-)|\/ComicReader\.umd[^/]*\.js$/i.test(relative)) {
+      throw new Error(`Retired renderer in release: ${relative}`);
+    }
     if (hasPrivatePath(relative)) forbidden.push(relative);
   }
   if (forbidden.length) throw new Error(`Private-state paths found in release: ${forbidden.join(', ')}`);
@@ -39,7 +42,12 @@ function auditRelease(folder) {
 }
 if (require.main === module) {
   try {
-    const folder = process.argv[2] || JSON.parse(fs.readFileSync(path.join(root, '.build/last-release.json'), 'utf8')).folder;
+    const lastPackages = ['last-preview.json', 'last-release.json']
+      .map(name => path.join(root, '.build', name))
+      .filter(filename => fs.existsSync(filename))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+    if (!process.argv[2] && !lastPackages.length) throw new Error('Build a package before running the release audit.');
+    const folder = process.argv[2] || JSON.parse(fs.readFileSync(lastPackages[0], 'utf8')).folder;
     console.log(JSON.stringify(auditRelease(folder), null, 2));
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

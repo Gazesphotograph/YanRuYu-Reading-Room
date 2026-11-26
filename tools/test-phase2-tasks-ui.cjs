@@ -5,7 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('./playwright-runtime.cjs');
 const { createFixtures, createFakeModel, attachFakeIpc, launchOptions, appURL } = require('./test-gallery.cjs');
-const { openManager } = require('./test-manager-glass.cjs');
 const output = path.join(__dirname, '.artifacts', 'phase2-tasks-ui');
 fs.mkdirSync(output, { recursive: true });
 const fixtures = createFixtures(path.join(output, 'fixtures'), 3, 4);
@@ -79,14 +78,6 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('.task-center-status')?.textContent.includes('模拟任务历史'));
     pass('Task-history failure is visible inside the panel and does not prevent library startup.');
     await context.close();
-    const classic = await openManager(browser, fixtures);
-    try {
-      tasksModel(classic.model);
-      await classic.page.locator('.manager-task-center').click();
-      await classic.page.waitForSelector('.task-center-dialog[open]');
-      assert.equal(await classic.page.locator('.task-center-item').count(), 2);
-      pass('The classic manager exposes the same task center.');
-    } finally { await classic.context.close(); }
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

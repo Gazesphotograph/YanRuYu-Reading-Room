@@ -45,13 +45,9 @@ export interface LibraryUpdatedEvent {
   [key: string]: unknown;
 }
 
-export interface MangaImageEvent {
-  id?: string;
-  filepath?: string;
-  index?: number;
-  width?: number;
-  height?: number;
-  [key: string]: unknown;
+export interface ReaderPage {
+  absolutePath: string;
+  relativePath: string;
 }
 
 export interface InvokeChannelMap {
@@ -76,10 +72,9 @@ export interface InvokeChannelMap {
   'show-file': { args: [filepath: string]; result: void };
   'use-new-cover': { args: [filepath: string]; result: string | null };
   'open-local-book': { args: [filepath: string, options?: Record<string, unknown>]; result: unknown };
-  'get-default-manga-reader': { args: [arg?: unknown]; result: string };
   'delete-local-book': { args: [filepath: string]; result: unknown };
   'move-local-book': { args: [oldPath: string, folderArr: string[]]; result: string | boolean };
-  'load-manga-image-list': { args: [book: Book, options?: Record<string, unknown>]; result: unknown };
+  'load-manga-image-list': { args: [book: Book]; result: ReaderPage[] };
   'release-sendimagelock': { args: []; result: void };
   'delete-image': { args: [filename: string, filepath: string, type: string]; result: boolean };
   'select-folder': { args: [title?: string]; result: string | undefined };
@@ -153,8 +148,6 @@ export interface InvokeChannelMap {
 export interface EventChannelMap {
   'send-action': SendActionEvent;
   'send-message': string;
-  'manga-image': MangaImageEvent;
-  'manga-thumbnail-image': MangaImageEvent;
   'tasks-changed': TasksChangedEvent;
   'library-updated': LibraryUpdatedEvent;
   'reading-visit-saved': ReadingVisitSavedEvent;
@@ -180,7 +173,6 @@ export const INVOKE_CHANNELS = [
   'show-file',
   'use-new-cover',
   'open-local-book',
-  'get-default-manga-reader',
   'delete-local-book',
   'move-local-book',
   'load-manga-image-list',
@@ -257,8 +249,6 @@ export const INVOKE_CHANNELS = [
 export const EVENT_CHANNELS = [
   'send-action',
   'send-message',
-  'manga-image',
-  'manga-thumbnail-image',
   'tasks-changed',
   'library-updated',
   'reading-visit-saved',

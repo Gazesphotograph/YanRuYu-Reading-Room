@@ -714,7 +714,7 @@ test('list-only reader returns original paths without decoding, copying, or stre
   const runtime = createRuntime({}, { imageList: pages });
   await runtime.start();
   const book = { id: 'fixture-book', filepath: path.join(appDir, 'mock-book.zip'), type: 'archive' };
-  const result = await runtime.invoke('load-manga-image-list', book, { backgroundProcessing: false });
+  const result = await runtime.invoke('load-manga-image-list', book);
   await settle();
   assert.deepEqual(result, pages, 'The file loader remains the source of directly readable original paths');
   assert.deepEqual(runtime.imageWork.loads, [{ filepath: book.filepath, type: 'archive' }]);
@@ -724,31 +724,5 @@ test('list-only reader returns original paths without decoding, copying, or stre
   assert.deepEqual(runtime.imageWork.copies, [], 'Original paths with URL characters must remain intact');
   assert.deepEqual(runtime.imageWork.cleared, [], 'List-only loading must not rebuild unused processed-page storage');
   assert.deepEqual(runtime.imageWork.events.filter(event => ['manga-image', 'manga-thumbnail-image'].includes(event.channel)), [], 'No legacy page or thumbnail stream should run');
-  runtime.app.quit();
-});
-
-test('legacy reader calls without options still resize and stream pages and thumbnails', async () => {
-  const pages = ['1.png', '2.webp'].map(name => ({
-    relativePath: name, absolutePath: path.join(appDir, 'mock-book', name),
-  }));
-  const runtime = createRuntime({ widthLimit: 400 }, { imageList: pages });
-  await runtime.start();
-  const book = { id: 'fixture-book', filepath: path.join(appDir, 'mock-book'), type: 'folder' };
-  // Opting out once must not change the default behavior of a later legacy call.
-  await runtime.invoke('load-manga-image-list', book, { backgroundProcessing: false });
-  const result = await runtime.invoke('load-manga-image-list', book);
-  await settle();
-  assert.deepEqual(result, pages);
-  assert.equal(runtime.imageWork.metadata.length, pages.length);
-  assert.equal(runtime.imageWork.resizes.length, pages.length * 2);
-  assert.equal(runtime.imageWork.files.length, pages.length * 2);
-  assert.equal(runtime.imageWork.cleared.length, 1);
-  const images = runtime.imageWork.events.filter(event => event.channel === 'manga-image');
-  const thumbnails = runtime.imageWork.events.filter(event => event.channel === 'manga-thumbnail-image');
-  assert.equal(images.length, pages.length);
-  assert.equal(thumbnails.length, pages.length);
-  assert.deepEqual(images.map(event => event.payload.index), [1, 2]);
-  assert(images.every(event => event.payload.width === 400 && event.payload.height === 600));
-  assert(thumbnails.every(event => event.payload.thumbnailPath.includes('thumb_')));
   runtime.app.quit();
 });

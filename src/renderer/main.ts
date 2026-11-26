@@ -1,7 +1,8 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import App from './app/App.vue';
-import { startLegacyInterface } from './legacy/bootstrap';
+// The native room modules are shipped beside the Vite output.
+const roomEntry = ['..', 'room-entry.js'].join('/');
 
 // Phase 0 of the UI refactor: the Vue root owns startup and hosts the existing
 // native interface unchanged. Later phases move the shell, desk, library and
@@ -17,7 +18,7 @@ try {
   mountShell();
 } catch (error) {
   // A failure in the new shell must never keep the reader from opening.
-  console.error('Vue shell failed to mount; continuing with the legacy interface.', error);
+  console.error('Vue shell failed to mount; continuing with the reading room.', error);
 }
 
-startLegacyInterface().catch(error => console.error('Legacy interface failed to load:', error));
+import(/* @vite-ignore */ new URL(roomEntry, import.meta.url).href).catch(error => console.error('Reading room failed to load:', error));

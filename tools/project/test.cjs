@@ -23,7 +23,9 @@ function test() {
     try { callback(); suites.push({ name, status:'passed', durationMs:Date.now()-started }); }
     catch (error) { suites.push({ name, status:'failed', durationMs:Date.now()-started, error:error.message }); console.error('FAIL ' + name + ': ' + error.message); }
   };
-  runSuite('engineering', () => runNode('--test', [path.join(root, 'tools', 'tests', 'engineering.test.cjs')]));
+  for (const file of fs.readdirSync(path.join(root, 'tools', 'tests')).filter(name=>name.endsWith('.test.cjs')).sort()) {
+    runSuite(file, () => runNode('--test', [path.join(root, 'tools', 'tests', file)]));
+  }
   const candidates = fs.readdirSync(path.join(root, 'tools')).filter(file => /^test-.*\.cjs$/.test(file)).sort();
   // The historic desktop gallery test reads a real library.
   const selected = candidates.filter(file => file !== 'test-desktop-gallery.cjs');
@@ -34,7 +36,7 @@ function test() {
   fs.writeFileSync(path.join(reportFolder, 'results.json'), JSON.stringify({ date:new Date().toISOString(),
     build:built.folder, sourceHashes:built.manifest.sourceHashes, passed:suites.length-failed.length, failed:failed.length, suites }, null, 2));
   if (failed.length) throw new Error(`${failed.length} suites failed: ${failed.map(suite=>suite.name).join(', ')}. Full report: ${path.join(reportFolder,'results.json')}`);
-  console.log(`Test suites passed: engineering + ${selected.length} full regression suites.`);
+  console.log(`Test suites passed: ${suites.length} regression suites.`);
 }
 
 try { test(); } catch (error) { console.error(error.message); process.exitCode = 1; }

@@ -33,6 +33,7 @@ async function verify(folder) {
     }
     await launch();
     assert.equal(await application.evaluate(({app})=>app.isPackaged),true);
+    assert.equal(await application.evaluate(({app})=>app.getVersion()),manifest.appVersion);
     assert.equal(await application.evaluate(({app})=>app.getPath('userData')),path.join(data,'.reading-room'));
     const decoded=await application.evaluate(({app})=>{
       const path=process.getBuiltinModule('path'),require=process.getBuiltinModule('module').createRequire(path.join(app.getAppPath(),'package.json'));
@@ -46,6 +47,8 @@ async function verify(folder) {
     await book.press('Enter');await readPage(1);await page.getByLabel('阅读模式').selectOption('double');
     await page.locator('#page-slider').fill('3');await readPage(3);await page.locator('[data-action="exit-reader"]').click();
     await page.locator('.reader').waitFor({state:'detached'});await page.evaluate(()=>window.YanruyuClientState.flush());
+    const windowTitle=await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getTitle());
+    assert.ok(windowTitle.includes(manifest.appVersion),windowTitle);
     pass('Packaged executable, native dependencies, decoder and isolated first scan open a real book.');
     await close();await launch();await page.locator('[data-desk-resume]').click();await readPage(3);
     assert.equal(await page.getByLabel('阅读模式').inputValue(),'double');await page.locator('[data-action="exit-reader"]').click();

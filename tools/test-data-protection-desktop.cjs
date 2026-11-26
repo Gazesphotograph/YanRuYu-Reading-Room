@@ -184,7 +184,7 @@ async function main() {
     const preferences = await page.evaluate(() => ({ theme: localStorage.getItem('room-theme'), view: localStorage.getItem('room-view'), activeTheme: document.documentElement.dataset.roomTheme }));
     assert.equal(preferences.theme, JSON.stringify('forest'));
     assert.equal(preferences.view, JSON.stringify('grid'));
-    assert.equal(preferences.activeTheme, 'forest');
+    assert.equal(preferences.activeTheme, 'dark');
     await page.locator('.library-table tbody tr').first().waitFor();
     assert.equal(await page.locator('.workspace-nav [aria-current="page"]').textContent(), '书库');
     pass('Restart restores the shared reading profile and applies backed-up preferences over the previous browser state');
@@ -230,7 +230,7 @@ async function main() {
     assert.equal(repaired[0].title, first.title);
     assert.equal(repaired[0].mark, true);
     assert.equal((await invoke('load-reading-state')).progress[first.id].page, 2);
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.roomTheme), 'forest');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.roomTheme), 'dark');
     const allEvents = fs.readFileSync(lifecycle, 'utf8').trim().split('\n').map(line => JSON.parse(line));
     assert.deepEqual(allEvents.map(event => event.action), ['relaunch', 'exit', 'relaunch', 'exit']);
     pass('A controlled restart after corrupt-data recovery returns to the original library, reading page and theme');

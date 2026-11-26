@@ -1,4 +1,4 @@
-// Restore portable preferences before themes or either reader are initialized.
+// Restore portable preferences before the theme or reader are initialized.
 const keys = [
   'reading-room-interface', 'recentRead', 'viewerReadingProgress',
   'viewerImageWidth', 'imageStyleType', 'imageStyleFit', 'showViewerSide',

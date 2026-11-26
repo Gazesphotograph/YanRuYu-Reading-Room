@@ -5,7 +5,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('./playwright-runtime.cjs');
 const { createFixtures, createFakeModel, attachFakeIpc, launchOptions, appURL } = require('./test-gallery.cjs');
-const { openManager } = require('./test-manager-glass.cjs');
 const out = path.join(__dirname, '.artifacts/data-protection-ui');
 fs.mkdirSync(out, { recursive: true });
 const fixtures = createFixtures(path.join(out, 'fixtures'), 3, 5);
@@ -125,16 +124,6 @@ async function main() {
       pass('Restored preferences hydrate before the initial theme and library view are rendered.');
     } finally { await hydrated.context.close(); }
 
-    const classic = await openManager(browser, fixtures);
-    try {
-      installBackupModel(classic.model);
-      await classic.page.getByRole('button', { name: '备份与恢复', exact: true }).click();
-      await classic.page.waitForSelector('.data-protection-dialog[open]');
-      await classic.page.getByRole('button', { name: '选择备份并预览' }).click();
-      await classic.page.waitForSelector('[data-protection="restore"]');
-      await classic.page.screenshot({ path: path.join(out, 'classic-backup-preview.png') });
-      pass('The shipped classic manager exposes the same backup and recovery panel.');
-    } finally { await classic.context.close(); }
     assert.deepEqual(report.errors, []);
   } finally {
     await browser.close();

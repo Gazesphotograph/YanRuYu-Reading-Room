@@ -10,15 +10,6 @@ function ensureStyles() {
   link.dataset.protectionStyle = ''; document.head.append(link);
 }
 
-export function installManagerDataProtection() {
-  ensureStyles();
-  if (document.querySelector('.manager-data-protection')) return;
-  const button = document.createElement('button'); button.type = 'button';
-  button.className = 'manager-room-return manager-data-protection'; button.textContent = '备份与恢复';
-  button.onclick = () => openDataProtection({ onLibraryChange: () => location.reload() });
-  document.body.append(button);
-}
-
 export async function openDataProtection({ onLibraryChange } = {}) {
   if (activeDialog?.open) { activeDialog.focus(); return; }
   ensureStyles();
@@ -72,7 +63,7 @@ export async function openDataProtection({ onLibraryChange } = {}) {
           if (result.canceled) { status('已取消选择备份。'); break; }
           preview = result;
           const s = result.summary, host = dialog.querySelector('#backup-preview'); host.hidden = false; host.className = 'protection-preview';
-          host.innerHTML = `<h3>恢复内容预览</h3><p>${esc(displayDate(s.createdAt))} · 版本 ${esc(s.appVersion)}</p><dl><dt>书目 / 元数据</dt><dd>${esc(s.books)} / ${esc(s.metadata)}</dd><dt>合集 / 阅读记录</dt><dd>${esc(s.collections)} / ${esc(s.readingRecords)}</dd><dt>封面</dt><dd>${s.includesCovers ? esc(s.covers) + ' 张' : '未包含'}</dd><dt>数据大小</dt><dd>${esc(displaySize(s.bytes))}</dd></dl><p class="protection-path">原书库目录：${esc(s.libraryPath || '未设置')}</p><p class="protection-note">将替换当前副本的数据，漫画原文件保持原位。元数据恢复到本副本；原目录不可用时需重新选择漫画文件夹。${s.includesCovers ? '' : '未包含的封面可在完整管理界面重新生成。'}</p><button class="protection-primary" data-protection="restore">确认恢复并重新启动</button>`;
+          host.innerHTML = `<h3>恢复内容预览</h3><p>${esc(displayDate(s.createdAt))} · 版本 ${esc(s.appVersion)}</p><dl><dt>书目 / 元数据</dt><dd>${esc(s.books)} / ${esc(s.metadata)}</dd><dt>合集 / 阅读记录</dt><dd>${esc(s.collections)} / ${esc(s.readingRecords)}</dd><dt>封面</dt><dd>${s.includesCovers ? esc(s.covers) + ' 张' : '未包含'}</dd><dt>数据大小</dt><dd>${esc(displaySize(s.bytes))}</dd></dl><p class="protection-path">原书库目录：${esc(s.libraryPath || '未设置')}</p><p class="protection-note">将替换当前副本的数据，漫画原文件保持原位。元数据恢复到本副本；原目录不可用时需重新选择漫画文件夹。${s.includesCovers ? '' : '缺少的封面可在书籍详情中刷新。'}</p><button class="protection-primary" data-protection="restore">确认恢复并重新启动</button>`;
           status('备份校验通过。请核对以上内容后确认恢复。');
           break;
         }

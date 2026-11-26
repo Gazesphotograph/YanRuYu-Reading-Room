@@ -60,6 +60,14 @@ const preferredReadingMode=storage.get('reading-mode',null);
 state.readingMode = ['paged','double','continuous'].includes(preferredReadingMode)?preferredReadingMode
   : ({single:'paged',double:'double',scroll:'continuous'})[localStorage.getItem('imageStyleType')] || 'paged';
 state.externalReader = storage.get('external-reader', false) === true;
+function defaultReaderPreferences() {
+  return {
+    mode: state.readingMode,
+    direction: state.setting.reverseLeftRight ? 'rtl' : 'ltr',
+    fit: localStorage.getItem('imageStyleFit') === 'width' ? 'width' : 'page',
+    coverAlone: state.setting.defaultInsertEmptyPage !== false,
+  };
+}
 let libraryIndex = new LibraryIndex();
 let discoveryAliases = [];
 let workspaceText = { key:'', matches:[], pending:false, error:'' };
@@ -390,7 +398,6 @@ function updateWorkspaceChrome() {
   $('#reading-desk').hidden = workspace !== 'desk';
   $('#catalog-workspace').hidden = workspace === 'desk';
   $('.room-context').hidden = workspace !== 'room';
-  $('.sidebar [data-action="classic"]').hidden = !!workspace;
   const arrange = $('[data-action="personalization"]');
   const inRoom = workspace === 'room';
   const host = inRoom ? $('.room-context') : $('.sidebar');
@@ -761,7 +768,7 @@ function readingOptionsMarkup() {
 function updateReadingOptions() {
   if (!$('#continuous-reading')) return;
   const button = $('.drawer [data-read]');
-  const preferences=readingProfile.getPreferences(button?.dataset.read,{mode:state.readingMode});
+  const preferences=readingProfile.getPreferences(button?.dataset.read,defaultReaderPreferences());
   $('#continuous-reading').checked = preferences.mode === 'continuous';
   $('#continuous-reading').disabled = state.externalReader;
   $('#external-reader').checked = state.externalReader;
@@ -781,7 +788,7 @@ function bindReadingOptions() {
     state.readingMode = e.target.checked ? 'continuous' : 'paged';
     storage.set('reading-mode', state.readingMode);
     const id=$('.drawer [data-read]')?.dataset.read;
-    if(id)readingProfile.stagePreferences(id,{...readingProfile.getPreferences(id,{direction:state.setting.reverseLeftRight?'rtl':'ltr'}),mode:state.readingMode});
+    if(id)readingProfile.stagePreferences(id,{...readingProfile.getPreferences(id,defaultReaderPreferences()),mode:state.readingMode});
     updateReadingOptions();
   };
   $('#external-reader').onchange = e => {
@@ -840,11 +847,15 @@ function details(id) {
 async function chooseBookCover(id) {
   const selected=await invoke('select-file','选择封面图片',[{name:'图片',extensions:['png','jpg','jpeg','webp','gif','avif']}]);
   if(!selected)return;
+  await saveBookCover(id, selected);
+  details(id);
+}
+async function saveBookCover(id, selected) {
   const coverPath=await invoke('use-new-cover',selected);
   if(!coverPath)throw new Error('封面生成失败，请选择可读取的图片');
   const saved=await invoke('save-book',{id,coverPath});
   const current=state.books.find(book=>book.id===id);if(current)Object.assign(current,saved);
-  rebuildLibraryIndex();renderBooks();details(id);toast('封面已保存');
+  rebuildLibraryIndex();renderBooks();toast('封面已保存');
 }
 function editBook(id) {
   const book = state.books.find(item => item.id === id);
@@ -960,7 +971,7 @@ function appearance() {
   $('.modal').classList.add('theme-modal');$('.modal').setAttribute('aria-label','外观主题');paintTheme(state.theme);
 }
 function settings() {
-  showModal(`<div class="drawer-top">MAKE YOURSELF AT HOME<button class="icon-btn" data-action="dismiss" aria-label="关闭设置">${icon('close')}</button></div><h2>让阅读，更合你的心意。</h2><div class="setting-row"><div>外观主题<small id="active-theme-name">${THEMES.find(t=>t.id===state.theme).name}</small></div><button class="pill-button" data-action="theme">${icon('palette')}选择主题</button></div><div class="setting-row"><div>书架视图<small>立体陈列或紧凑平铺</small></div><select id="setting-view" aria-label="书架视图"><option value="shelf">立体书架</option><option value="grid">平铺封面</option></select></div><div class="setting-row"><div>漫画文件夹<small>读取目录中的图片与漫画压缩包</small></div><button class="pill-button" data-action="library">更换</button></div><div class="path">${esc(state.setting.library||'尚未选择')}</div><div class="setting-row"><div>元数据来源<small>在线搜索、登录 Cookie 与代理</small></div><button class="pill-button" data-action="metadata-settings">来源设置</button></div><button class="pill-button" data-action="classic">打开完整管理界面 ${icon('arrow')}</button><p class="path">经典管理界面保留旧阅读器和高级兼容选项。</p>`);
+  showModal(`<div class="drawer-top">MAKE YOURSELF AT HOME<button class="icon-btn" data-action="dismiss" aria-label="关闭设置">${icon('close')}</button></div><h2>让阅读，更合你的心意。</h2><div class="setting-row"><div>外观主题<small id="active-theme-name">${THEMES.find(t=>t.id===state.theme).name}</small></div><button class="pill-button" data-action="theme">${icon('palette')}选择主题</button></div><div class="setting-row"><div>书架视图<small>立体陈列或紧凑平铺</small></div><select id="setting-view" aria-label="书架视图"><option value="shelf">立体书架</option><option value="grid">平铺封面</option></select></div><div class="setting-row"><div>漫画文件夹<small>读取目录中的图片与漫画压缩包</small></div><button class="pill-button" data-action="library">更换</button></div><div class="path">${esc(state.setting.library||'尚未选择')}</div><div class="setting-row"><div>元数据来源<small>在线搜索、登录 Cookie 与代理</small></div><button class="pill-button" data-action="metadata-settings">来源设置</button></div>`);
   $('#setting-view').value=state.view; $('#setting-view').onchange=e=>{state.view=e.target.value;storage.set('view',state.view);renderBooks();};
   const viewSetting = $('#setting-view').closest('.setting-row');
   viewSetting.hidden = !!workspace;
@@ -1093,7 +1104,7 @@ function visibleReaderPages(r) {
   return spreads?.[readerSpreadIndex(spreads,r.page)] || [r.page];
 }
 function readerMarkup(r) {
-  return `<section class="reader reader-with-tools" data-reading-mode="${r.mode}" role="dialog" aria-modal="true" aria-label="漫画阅读器"><header class="reader-bar"><button class="pill-button" data-action="exit-reader">${icon('left')}书架</button><div class="reader-title" title="${esc(title(r.book))}">${esc(title(r.book))}</div><button class="pill-button" data-action="reader-thumbnails" aria-controls="reader-thumbnails" aria-expanded="false" title="缩略图 (T)">缩略图</button><button class="icon-btn" data-action="fullscreen" title="全屏 (F)" aria-label="全屏">${icon('expand')}</button><div class="reader-tools" aria-label="阅读工具"><label>模式<select id="reader-mode" aria-label="阅读模式"><option value="paged">单页</option><option value="double">双页</option><option value="continuous">连续</option></select></label><label>方向<select id="reader-direction" aria-label="阅读方向"><option value="ltr">从左向右</option><option value="rtl">从右向左</option></select></label><label id="reader-fit-control">显示<select id="reader-fit" aria-label="页面显示方式"><option value="page">完整一页</option><option value="width">适合宽度</option></select></label><label id="reader-cover-control" class="reader-cover-option"><input id="reader-cover-alone" type="checkbox">封面独页</label><div class="reader-zoom-controls" aria-label="页面缩放"><button class="icon-btn" data-action="reader-zoom-out" aria-label="缩小页面" title="缩小 (-)">−</button><label><input id="reader-zoom" type="number" min="50" max="250" step="25" inputmode="numeric" aria-label="缩放百分比"><span>%</span></label><button class="icon-btn" data-action="reader-zoom-in" aria-label="放大页面" title="放大 (+)">+</button><button class="pill-button" data-action="reader-zoom-reset" title="重置缩放 (0)">重置</button></div><details class="reader-shortcuts"><summary>快捷键</summary><p>← →：按阅读方向翻页<br>↑ ↓ / 空格 / PageUp / PageDown：滚动或翻页<br>Home / End：首末页<br>G：输入页码　T：缩略图　F：全屏<br>M：切换模式　R：切换方向　W：切换显示<br>+ / −：缩放　0：重置缩放　Esc：返回</p></details></div></header><div class="reader-workspace"><aside id="reader-thumbnails" class="reader-thumbnails" aria-label="页面缩略图" hidden><div class="reader-thumbnail-header"><button class="icon-btn" data-action="reader-thumbs-prev" aria-label="上一组缩略图">${icon('left')}</button><span id="reader-thumbnail-range"></span><button class="icon-btn" data-action="reader-thumbs-next" aria-label="下一组缩略图">${icon('right')}</button></div><div id="reader-thumbnail-grid" class="reader-thumbnail-grid"></div></aside><div class="reader-body" id="reader-body" tabindex="0" aria-label="漫画页面"><div class="reader-placeholder">正在翻开这本书…</div></div></div><footer class="reader-bottom"><button class="icon-btn" data-action="page-prev" aria-label="上一页" disabled>${icon('left')}</button><span id="reader-page" aria-live="polite">— / —</span><input id="page-slider" aria-label="跳转页码" type="range" min="1" max="${Math.max(1,r.total)}" value="1" disabled><button class="icon-btn" data-action="page-next" aria-label="下一页" disabled>${icon('right')}</button><div class="reader-page-jump"><label><input id="reader-page-input" type="number" min="1" max="${Math.max(1,r.total)}" value="${r.page}" inputmode="numeric" aria-label="直接输入页码" disabled><span>页</span></label><button class="pill-button" data-action="reader-page-jump" disabled>跳转</button></div><span id="reader-spread-label" class="reader-spread-label"></span><span class="reader-hint">← → 翻页 · G 页码 · Esc 返回</span></footer></section>`;
+  return `<section class="reader reader-with-tools" data-reading-mode="${r.mode}" role="dialog" aria-modal="true" aria-label="漫画阅读器"><header class="reader-bar"><button class="pill-button" data-action="exit-reader">${icon('left')}书架</button><div class="reader-title" title="${esc(title(r.book))}">${esc(title(r.book))}</div><button class="pill-button" data-action="reader-thumbnails" aria-controls="reader-thumbnails" aria-expanded="false" title="缩略图 (T)">缩略图</button><button class="icon-btn" data-action="fullscreen" title="全屏 (F)" aria-label="全屏">${icon('expand')}</button><div class="reader-tools" aria-label="阅读工具"><label>模式<select id="reader-mode" aria-label="阅读模式"><option value="paged">单页</option><option value="double">双页</option><option value="continuous">连续</option></select></label><label>方向<select id="reader-direction" aria-label="阅读方向"><option value="ltr">从左向右</option><option value="rtl">从右向左</option></select></label><label id="reader-fit-control">显示<select id="reader-fit" aria-label="页面显示方式"><option value="page">完整一页</option><option value="width">适合宽度</option></select></label><label id="reader-cover-control" class="reader-cover-option"><input id="reader-cover-alone" type="checkbox">封面独页</label><div class="reader-zoom-controls" aria-label="页面缩放"><button class="icon-btn" data-action="reader-zoom-out" aria-label="缩小页面" title="缩小 (-)">−</button><label><input id="reader-zoom" type="number" min="50" max="250" step="25" inputmode="numeric" aria-label="缩放百分比"><span>%</span></label><button class="icon-btn" data-action="reader-zoom-in" aria-label="放大页面" title="放大 (+)">+</button><button class="pill-button" data-action="reader-zoom-reset" title="重置缩放 (0)">重置</button></div><details class="reader-actions"><summary>书页与切换</summary><div class="reader-action-buttons"><button class="pill-button" data-action="reader-prev-book" disabled>上一本</button><button class="pill-button" data-action="reader-next-book" disabled>下一本</button><button class="pill-button" data-action="reader-copy-page" disabled>复制当前页</button><button class="pill-button" data-action="reader-cover-page" disabled>设当前页为封面</button><button class="pill-button" data-action="reader-delete-page" disabled>删除当前页</button></div></details><details class="reader-shortcuts"><summary>快捷键</summary><p>← →：按阅读方向翻页<br>↑ ↓ / 空格 / PageUp / PageDown：滚动或翻页<br>Home / End：首末页<br>G：输入页码　T：缩略图　F：全屏<br>M：切换模式　R：切换方向　W：切换显示<br>+ / −：缩放　0：重置缩放　Esc：返回</p></details></div></header><div class="reader-workspace"><aside id="reader-thumbnails" class="reader-thumbnails" aria-label="页面缩略图" hidden><div class="reader-thumbnail-header"><button class="icon-btn" data-action="reader-thumbs-prev" aria-label="上一组缩略图">${icon('left')}</button><span id="reader-thumbnail-range"></span><button class="icon-btn" data-action="reader-thumbs-next" aria-label="下一组缩略图">${icon('right')}</button></div><div id="reader-thumbnail-grid" class="reader-thumbnail-grid"></div></aside><div class="reader-body" id="reader-body" tabindex="0" aria-label="漫画页面"><div class="reader-placeholder">正在翻开这本书…</div></div></div><footer class="reader-bottom"><button class="icon-btn" data-action="page-prev" aria-label="上一页" disabled>${icon('left')}</button><span id="reader-page" aria-live="polite">— / —</span><input id="page-slider" aria-label="跳转页码" type="range" min="1" max="${Math.max(1,r.total)}" value="1" disabled><button class="icon-btn" data-action="page-next" aria-label="下一页" disabled>${icon('right')}</button><div class="reader-page-jump"><label><input id="reader-page-input" type="number" min="1" max="${Math.max(1,r.total)}" value="${r.page}" inputmode="numeric" aria-label="直接输入页码" disabled><span>页</span></label><button class="pill-button" data-action="reader-page-jump" disabled>跳转</button></div><span id="reader-spread-label" class="reader-spread-label"></span><span class="reader-hint">← → 翻页 · G 页码 · Esc 返回</span></footer></section>`;
 }
 function applyReaderAppearance(r) {
   if(state.reader!==r)return;
@@ -1136,7 +1147,7 @@ function changeReaderPreferences(patch) {
   updateReaderControls(r);
 }
 function changeReaderZoom(delta) { const r=state.reader;if(r)changeReaderPreferences({zoom:r.preferences.zoom+delta}); }
-async function openReader(id, fromStart=false) {
+async function openReader(id, fromStart=false, counted=false) {
   const book=state.books.find(b=>b.id===id); if(!book)return;
   if((workspace==='library'||workspace==='room')&&selectedId!==id){selectedId=id;updateSelection();}
   const intent=++readerIntent;
@@ -1173,8 +1184,12 @@ async function openReader(id, fromStart=false) {
   dismiss();
   $('.shell').inert=true;
   spatialRoom?.setSuspended(true);
-  const preferences=readingProfile.getPreferences(id,{mode:state.readingMode,direction:state.setting.reverseLeftRight?'rtl':'ltr'});
-  const r={book,returnFocus,page:fromStart?1:state.progress[id]?.page||1,total:pageCount(book),mode:preferences.mode,preferences,loaded:new Map(),dimensions:new Map(),preloaded:new Map(),mountedPages:new Set(),nearbyPages:new Set(),keepPages:new Set(),viewed:new Set(),pageElements:[],counted:false,listReady:false,events:new AbortController(),lastWheelTurn:0,wheelAmount:0,thumbnailStart:1};state.reader=r;
+  const preferences=readingProfile.getPreferences(id, defaultReaderPreferences());
+  const r={book,returnFocus,page:fromStart?1:state.progress[id]?.page||1,total:pageCount(book),mode:preferences.mode,preferences,loaded:new Map(),dimensions:new Map(),preloaded:new Map(),mountedPages:new Set(),nearbyPages:new Set(),keepPages:new Set(),viewed:new Set(),pageElements:[],counted,listReady:false,events:new AbortController(),lastWheelTurn:0,wheelAmount:0,thumbnailStart:1};state.reader=r;
+  const browseOrder=visibleBooks().filter(item=>item.exist!==false).map(item=>item.id);
+  const browseIndex=browseOrder.indexOf(id);
+  r.prevBookId=browseIndex>0?browseOrder[browseIndex-1]:undefined;
+  r.nextBookId=browseIndex>=0?browseOrder[browseIndex+1]:undefined;
   r.resumeOffset = fromStart ? 0 : Number(state.progress[id]?.offset) || 0;
   r.offsetPage=r.page;
   $('#reader-root').innerHTML=readerMarkup(r);applyReaderAppearance(r);
@@ -1199,9 +1214,9 @@ async function openReader(id, fromStart=false) {
   body.addEventListener('scroll', () => scheduleContinuousPosition(r), {passive:true, signal:r.events.signal});
   r.resizeObserver=new ResizeObserver(()=>{if(r.mode==='continuous'){updatePagedLayout(r);scheduleContinuousPosition(r);}else updatePagedLayout(r);});r.resizeObserver.observe(body);
   try {
-    const list=await invoke('load-manga-image-list',book,{backgroundProcessing:false}); if(state.reader!==r)return;
-    r.total=list.length;r.listReady=true;r.page=Math.max(1,Math.min(r.page,r.total||1));r.spreadsDirty=true;
-    // Original paths make every page immediately reachable; optimized images replace them as they arrive.
+    const list=await invoke('load-manga-image-list',book); if(state.reader!==r)return;
+    r.pages=list;r.total=list.length;r.listReady=true;r.page=Math.max(1,Math.min(r.page,r.total||1));r.spreadsDirty=true;
+    // Decode pages on demand from the original paths.
     list.forEach((img,i)=>{if(!r.loaded.has(i+1))r.loaded.set(i+1,img.absolutePath);setPageDimensions(r,i+1,img.width,img.height);});
     updateReaderControls(r);
     if(!list.length){body.innerHTML='<div class="reader-placeholder">这本书中没有可读取的图片。</div>';return;}
@@ -1214,11 +1229,16 @@ function updateReaderControls(r) {
   $('#page-slider').max=Math.max(1,r.total);$('#page-slider').value=r.page;$('#page-slider').disabled=!r.listReady||!r.total;
   const visible=visibleReaderPages(r);
   $('[data-action="page-prev"]').disabled=!r.listReady||visible[0]<=1;
-  $('[data-action="page-next"]').disabled=!r.listReady||!r.total||visible.at(-1)>=r.total;
+  $('[data-action="page-next"]').disabled=!r.listReady||!r.total||(visible.at(-1)>=r.total&&!(state.setting.autoNextManga&&adjacentBook(r,1)));
   const direct=$('#reader-page-input');direct.max=Math.max(1,r.total);direct.disabled=!r.listReady||!r.total;
   if(document.activeElement!==direct)direct.value=r.page;
   $('[data-action="reader-page-jump"]').disabled=direct.disabled;
   $('[data-action="reader-thumbnails"]').disabled=direct.disabled;
+  $('[data-action="reader-prev-book"]').disabled=!adjacentBook(r,-1);
+  $('[data-action="reader-next-book"]').disabled=!adjacentBook(r,1);
+  $('[data-action="reader-copy-page"]').disabled=!r.loaded.has(r.page);
+  $('[data-action="reader-cover-page"]').disabled=!r.loaded.has(r.page);
+  $('[data-action="reader-delete-page"]').disabled=!r.pages?.[r.page-1]?.relativePath;
   $('#reader-spread-label').textContent=r.mode==='double'?(visible.length===2?`双页 ${visible[0]}–${visible[1]}`:'独页'):'';
   if(r.thumbnailsOpen){
     if(!r.thumbnailManual&&(r.page<r.thumbnailStart||r.page>=r.thumbnailStart+60))renderReaderThumbnails(r,true);
@@ -1300,10 +1320,11 @@ function renderPage() {
 function updatePagedLayout(r) {
   if(state.reader!==r)return;
   const body=$('#reader-body');if(!body)return;
+  const limit=Number(state.setting.widthLimit)>0?Number(state.setting.widthLimit):Infinity;
   if(r.mode==='continuous'){
     const pages=$('.continuous-pages',body);
     if(pages){
-      const width=Math.max(1,Math.min(body.clientWidth,1000)*r.preferences.zoom/100);
+      const width=Math.max(1,Math.min(limit,Math.min(body.clientWidth,1000)*r.preferences.zoom/100));
       if(Math.abs(pages.getBoundingClientRect().width-width)>.5){
         // A sidebar or window resize changes every preceding page's height.
         // Preserve the current page fraction before the column width changes.
@@ -1320,7 +1341,8 @@ function updatePagedLayout(r) {
   const style=getComputedStyle(body),width=Math.max(1,body.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight));
   const height=Math.max(1,body.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom));
   const ratioSum=ratios.reduce((sum,ratio)=>sum+ratio,0);
-  const imageHeight=(r.preferences.fit==='width'?width/ratioSum:Math.min(height,width/ratioSum))*r.preferences.zoom/100;
+  const fitHeight=r.preferences.fit==='width'?width/ratioSum:Math.min(height,width/ratioSum);
+  const imageHeight=Math.min(limit/Math.max(...ratios),fitHeight*r.preferences.zoom/100);
   holders.forEach((holder,index)=>{holder.style.width=`${ratios[index]*imageHeight}px`;holder.style.height=`${imageHeight}px`;});
 }
 function preloadNeighborPages(r) {
@@ -1440,10 +1462,42 @@ function goPage(page) {
   saveProgress(r);r.resumePage=null;r.page=Math.max(1,Math.min(Math.round(page),r.total));r.resumeOffset=0;r.offsetPage=r.page;r.thumbnailManual=false;
   if(r.mode==='continuous')scrollToReaderPage(r,r.page);else renderPage();
 }
+function adjacentBook(reader,direction) {
+  return direction<0?reader.prevBookId:reader.nextBookId;
+}
+async function turnReaderBook(direction) {
+  const r=state.reader;
+  const id=r&&adjacentBook(r,direction);
+  if(id&&!r.closing&&!r.editingPage)await openReader(id);
+}
+async function editReaderPage(action) {
+  const r=state.reader, page=r?.pages?.[r.page-1];
+  if(!page||r.editingPage||r.closing)return;
+  if(action==='delete'&&(!page.relativePath||!window.confirm(`删除第 ${r.page} 页？${r.book.type==='folder'?'图片将移入回收站。':'原压缩包将保存为恢复点。'}`)))return;
+  r.editingPage=true;
+  try {
+    if(action==='copy') {
+      await invoke('copy-image-to-clipboard',page.absolutePath);
+      toast('图片已复制');
+    } else if(action==='cover') await saveBookCover(r.book.id,page.absolutePath);
+    else {
+      if(!await invoke('delete-image',page.relativePath,r.book.filepath,r.book.type))throw new Error('删页失败，请检查书籍文件和写入权限');
+      try {
+        const refreshed=await invoke('patch-local-metadata-by-book',{id:r.book.id});
+        Object.assign(r.book,refreshed);
+        rebuildLibraryIndex();
+        toast('页面已删除');
+      } finally {
+        if(state.reader===r)await openReader(r.book.id,false,r.counted);
+      }
+    }
+  } finally { r.editingPage=false; }
+}
 function turnReaderPage(direction) {
   const r=state.reader;if(!r)return;
   const target=readerTurnTarget(r.page,r.total,direction,readerSpreads(r));
   if(target!==r.page)goPage(target);
+  else if(direction>0&&r.listReady&&r.total&&state.setting.autoNextManga)turnReaderBook(1).catch(fail);
 }
 function jumpReaderPage() {
   const input=$('#reader-page-input'),r=state.reader;if(!input||!r)return;
@@ -1575,7 +1629,6 @@ const actions={
   tasks:()=>{dismiss();return window.YanruyuTasks.open();}, 'clear-cache':clearIdleCache,
   favorites:()=>{state.favorites=!state.favorites;state.page=1;renderBooks();},
   'reader-program':chooseReaderProgram,
-  classic:async()=>{saveLibraryPosition();if(state.reader)await closeReader();await persistProgress();localStorage.setItem('reading-room-interface','classic');await window.YanruyuClientState?.flush();location.hash='';location.reload();},
   random:()=>{const books=visibleBooks();if(books.length)details(books[Math.floor(Math.random()*books.length)].id);else toast('这个书架还是空的，先添加一些藏书吧。');},
   reset:()=>{
     if(workspace==='room') roomQuery=normalizeShelfQuery({});
@@ -1586,6 +1639,8 @@ const actions={
   prev:()=>{state.page=Math.max(1,state.page-1);renderBooks();},next:()=>{state.page++;renderBooks();},
   minimize:()=>invoke('window-minimize'),maximize:()=>invoke('window-toggle-maximize'),'close-window':async()=>{if(state.reader)saveProgress(state.reader);await persistProgress();return invoke('window-close');},
   'exit-reader':closeReader,'page-prev':()=>turnReaderPage(-1),'page-next':()=>turnReaderPage(1),
+  'reader-prev-book':()=>turnReaderBook(-1),'reader-next-book':()=>turnReaderBook(1),
+  'reader-copy-page':()=>editReaderPage('copy'),'reader-cover-page':()=>editReaderPage('cover'),'reader-delete-page':()=>editReaderPage('delete'),
   'reader-thumbnails':toggleReaderThumbnails,'reader-thumbs-prev':()=>turnReaderThumbnails(-1),'reader-thumbs-next':()=>turnReaderThumbnails(1),
   'reader-page-jump':jumpReaderPage,'reader-zoom-out':()=>changeReaderZoom(-25),'reader-zoom-in':()=>changeReaderZoom(25),'reader-zoom-reset':()=>changeReaderPreferences({zoom:100}),
   fullscreen:()=>document.fullscreenElement?document.exitFullscreen():$('.reader').requestFullscreen(),
@@ -1654,7 +1709,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     e.preventDefault();
     if(state.reader){
-      const help=$('.reader-shortcuts');
+      const help=$('.reader-shortcuts[open], .reader-actions[open]');
       if(help?.open){help.open=false;help.querySelector('summary').focus();}
       else if(state.reader.thumbnailsOpen){toggleReaderThumbnails();$('[data-action="reader-thumbnails"]').focus();}
       else closeReader().catch(fail);
@@ -1719,16 +1774,9 @@ document.addEventListener('scroll',event=>{
 },true);
 renderShell();
 initLiquidGlass();
-window.ipcRenderer.on('manga-image',(_event,img)=>{
-  const r=state.reader;if(!r||img.id!==`${r.book.id}_${img.index}`)return;
-  r.loaded.set(img.index,img.filepath);if(!r.listReady)r.total=img.total;
-  setPageDimensions(r,img.index,img.width,img.height);
-  if(!r.listReady)return;
-  if(r.mode==='continuous'){
-    const image=r.pageElements[img.index-1]?.querySelector('img');
-    if(image?.hasAttribute('src'))mountContinuousPage(r,img.index);
-  }else if(visibleReaderPages(r).includes(img.index))renderPage();
-});
 window.ipcRenderer.on('send-message',(_event,message)=>{if(state.loading)toast(String(message),6000);});
-window.ipcRenderer.on('send-action',(_event,data)=>{if(data.action==='send-progress'&&state.loading&&data.progress>=0)$('#local-count').textContent=`正在整理书库 ${Math.round(data.progress*100)}%`;});
-try {state.setting=await invoke('load-setting');await load(false);if(state.setting.loadOnStart&&state.setting.library)load(true).catch(fail);await discovery.refreshAliases().catch(error=>console.warn('本地别名暂不可用：',error));await invoke('update-window-title','私人漫画阅览室');} catch(error) {$('#room').innerHTML=`<div class="empty"><h2>书库暂时未能打开</h2><p>${esc(error.message)}</p><button class="pill-button" data-action="scan">重新载入</button></div>`;fail(error);}
+window.ipcRenderer.on('send-action',(_event,data)=>{if(data.action==='setting'&&!state.reader){settings();return;}if(data.action==='send-progress'&&state.loading&&data.progress>=0)$('#local-count').textContent=`正在整理书库 ${Math.round(data.progress*100)}%`;});
+try {state.setting=await invoke('load-setting');
+  state.theme=resolveTheme(state.setting.theme);paintTheme(state.theme);
+  state.externalReader=storage.get('external-reader',state.setting.directEnter==='externalViewer')===true;
+  await load(false);if(state.setting.loadOnStart&&state.setting.library)load(true).catch(fail);await discovery.refreshAliases().catch(error=>console.warn('本地别名暂不可用：',error));await invoke('update-window-title','私人漫画阅览室');} catch(error) {$('#room').innerHTML=`<div class="empty"><h2>书库暂时未能打开</h2><p>${esc(error.message)}</p><button class="pill-button" data-action="scan">重新载入</button></div>`;fail(error);}

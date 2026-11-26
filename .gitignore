@@ -11,7 +11,6 @@
 !/LICENSE
 !/docs/
 !/tools/
-!/source/
 !/src/
 !/tsconfig.json
 !/vite.config.mts
@@ -40,7 +39,6 @@
 /resources/extraResources/*
 !/resources/extraResources/7z.exe
 !/resources/extraResources/7z.dll
-!/resources/extraResources/manga_reader.exe
 !/resources/extraResources/License.txt
 
 # Source and test directories still exclude generated output and private state.

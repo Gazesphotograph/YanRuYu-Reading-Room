@@ -35,7 +35,7 @@ node tools/test-startup-tray.cjs
 node tools/test-ui-theme-consistency.cjs --screenshots
 ```
 
-覆盖 8 套主题下的任务中心、书库整理、本地发现、私人阅览室与设置；以像素对比验证整个玻璃面板确实模糊背景；检查内容滚动后的固定顶栏、弹窗关闭入口、图标居中，以及完整管理页三个快捷按钮与分页的对齐和避让。全部使用中性封面与内存模拟数据。报告和截图位于 `tools/.artifacts/ui-theme-consistency`；可用 `--case=themes,glass-panels,room-layout,dialog-layout,manager-layout` 选择检查组。
+覆盖 4 套主题下的任务中心、书库整理、本地发现、私人阅览室与设置；以像素对比验证整个玻璃面板确实模糊背景；检查内容滚动后的固定顶栏、弹窗关闭入口、图标居中与分页对齐。全部使用中性封面与内存模拟数据。报告和截图位于 `tools/.artifacts/ui-theme-consistency`；可用 `--case=themes,glass-panels,room-layout,dialog-layout` 选择检查组。
 
 2026-09-13 封面比例、主题房间与颜如玉品牌更新：
 
@@ -84,27 +84,16 @@ node tools/test-liquid-glass.cjs --screenshots
 
 使用相同的隔离模拟书库，检查背景折射像素、文字与点击区域、动态详情、窄窗口、主题切换与资源释放，以及减少动态/透明度的降级。报告和截图默认写入系统临时目录，可通过 `LIQUID_GLASS_TEST_OUTPUT` 指定位置。可用 `--case=lifecycle,optics,content,preferences` 选择检查组。
 
-完整管理页的液态玻璃专项检查：
-
-```powershell
-node tools/test-manager-glass.cjs
-```
-
-同样使用中性书封、内存模拟数据和独立浏览器，不连接真实数据库或正在运行的程序。覆盖光学资源回收、真实控件的条纹背景折射、搜索与排序、设置与详情、文件夹及右键菜单、标签与合集操作栏、分页与滚动、两种界面往返、减少动态/透明度与高对比度降级。布局检查覆盖 720、950、1280、1560 像素宽度，验证统计条完整显示、工具栏和分页不被裁剪或遮挡；详情主按钮验证默认及悬停状态的文字对比，管理侧栏检查控件实际位于窗口内并能命中。
-
-报告和截图位于 `tools/.artifacts/manager-glass`。截图会等字体与有限入场动画结束；示例元数据也使用有效日期和大小。Firefox 降级分支通过 Chromium 的用户代理模拟验证，不代表原生 Firefox 渲染测试。`test-manager-glass.cjs` 可作为模块导入以复用隔离页面及截图辅助函数，导入不会自动运行测试。
-
 本次修复的补充检查：
 
 ```powershell
 node tools/test-room-repair.cjs
 node tools/test-scene-motion.cjs
-node tools/test-manager-themes.cjs
 node tools/test-startup-tray.cjs
 node tools/test-room-author-sort.cjs
 ```
 
-分别覆盖标签去重与交集、组合计数、顶栏拖动区域样式及事件、详情边框与主按钮、128 页往返与图片保留范围；反转拖动、场景/阴影/封面复用；管理页 8 主题、往返同步、旧偏好迁移和关于移除；主进程启动即创建托盘、退出与设置生命周期，以及新阅读器跳过整本图片处理、旧调用兼容。
+分别覆盖标签去重与交集、组合计数、顶栏拖动区域样式及事件、详情边框与主按钮、128 页往返与图片保留范围；反转拖动、场景/阴影/封面复用；主进程启动即创建托盘、退出与设置生命周期，以及新阅读器跳过整本图片处理。
 
 作者排序检查覆盖中文与数字自然顺序、大小写、多作者、缺失作者、同作者书名排序、分页与筛选、3D 书架、刷新后的排序记忆，以及书库更新后的排序缓存重建。
 

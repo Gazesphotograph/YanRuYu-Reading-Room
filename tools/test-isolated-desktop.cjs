@@ -88,12 +88,7 @@ async function main() {
     await page.waitForSelector('.reader', { state: 'detached' });
     pass('Built renderer opens a real generated book and displays page two');
 
-    await page.locator('[data-action="classic"]').click({ noWaitAfter: true });
-    await page.waitForFunction(() => !document.querySelector('.shell') && document.querySelector('#app')?.children.length > 0, {}, { timeout: 30000 });
-    await page.getByRole('button', { name: '返回 3D 阅览室', exact: true }).click({ noWaitAfter: true });
-    await page.waitForSelector('#room [data-book]', { state: 'attached' });
-    pass('Preserved custom classic manager and 3D return both load');
-
+    assert.equal(await page.locator('[data-action="classic"]').count(), 0);
     await page.evaluate(() => localStorage.setItem('yanruyu-isolated-smoke-marker', 'retained'));
     await close();
     application = await launch();

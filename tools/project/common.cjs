@@ -10,7 +10,7 @@ const appSource = path.join(root, 'resources', 'app');
 const appPackage = () => JSON.parse(fs.readFileSync(path.join(appSource, 'package.json'), 'utf8'));
 const sourceTrees = ['dist', 'modules', 'fileLoader', 'public'];
 const sourceFiles = ['index.js', 'preload.js', 'package.json', 'package-lock.json'];
-const extras = ['7z.exe', '7z.dll', 'manga_reader.exe', 'License.txt'];
+const extras = ['7z.exe', '7z.dll', 'License.txt'];
 const privateSegment = /^(?:\.reading-room|\.data-protection|\.dev-data|\.artifacts|profiles?|\.?cache|code cache|gpucache|cover|viewer|backups?|recovery|restore-points|tmp|temp|local storage|session storage|network|sessions|\.env(?:\..*)?|cookies|credentials.*|secret_key\.json|(?:setting|collectionList|client-state|reading-state|ui-state|task-state|window-state|library-organizer|local-search)\.json(?:\..*)?|restore-journal\.json|.*\.yru-backup|bookList\.json(?:\..*)?|(?:database|metadata)\.sqlite(?:-.*)?|.*\.(?:sqlite|db)(?:-.*)?|.*\.log|log\.txt|preferences|local state)$/i;
 const sourceExtension = /\.(?:js|cjs|mjs|ps1|json|css|html|svg|png|ico|jpg|jpeg|webp|woff2?|ttf|txt|md|map)$/i;
 

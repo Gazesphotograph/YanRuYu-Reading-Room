@@ -28,7 +28,7 @@ async function main() {
   const database=file=>open({filename:path.join(data,file),driver:Database});
   try {
     fs.mkdirSync(data);fs.mkdirSync(destination,{recursive:true});fs.mkdirSync(recycle);
-    fs.writeFileSync(path.join(data,'setting.json'),JSON.stringify({library,hideTitleBar:true,loadOnStart:false,autoCheckUpdates:false,enabledLANBrowsing:false,closeToTray:false,minimizeOnStart:false,startOnLogin:false,requireGap:0,imageExplorer:''}));
+    fs.writeFileSync(path.join(data,'setting.json'),JSON.stringify({library,hideTitleBar:true,loadOnStart:false,autoCheckUpdates:false,enabledLANBrowsing:false,closeToTray:false,minimizeOnStart:false,startOnLogin:false,requireGap:0,imageExplorer:'"C:/old release/resources/extraResources/manga_reader.exe"'}));
     for(let volume=1;volume<=2;volume++){
       const folder=path.join(library,'Neutral volume '+volume);fs.mkdirSync(folder);
       for(let index=1;index<=4;index++){
@@ -55,10 +55,12 @@ sources.createMetadataSources=options=>factory({...options,request:async(url,opt
   return JSON.stringify(response);
 }});
 require(${JSON.stringify(path.join(target.app,'index.js'))});`);
-    await launch();await invoke('load-book-list',true);
+    await launch();assert.equal((await invoke('load-setting')).imageExplorer,'');await invoke('load-book-list',true);
     const books=(await invoke('load-book-list',false)).sort((a,b)=>a.filepath.localeCompare(b.filepath)),first=books[0],second=books[1];assert.equal(books.length,2);
-    await page.evaluate(()=>{localStorage.setItem('room-workspace-preview','true');localStorage.setItem('room-workspace-start-page',JSON.stringify('library'));localStorage.setItem('room-workspace-library-view',JSON.stringify('table'));location.reload();});
+    await page.evaluate(()=>{localStorage.setItem('reading-room-interface','classic');localStorage.setItem('room-workspace-library-view',JSON.stringify('table'));location.reload();});
     await page.getByRole('table',{name:'书库结果'}).waitFor();
+    assert.equal(await page.locator('[data-action="classic"]').count(),0);
+    assert.equal(await page.evaluate(()=>localStorage.getItem('reading-room-interface')),'room');
     await invoke('save-reading-progress',first.id,{page:2,total:4,time:Date.now()-7200000,source:'room'});
     await close();
     const readingFile=path.join(data,'reading-state.json'),old=JSON.parse(fs.readFileSync(readingFile,'utf8'));
@@ -168,6 +170,66 @@ require(${JSON.stringify(path.join(target.app,'index.js'))});`);
     assert.equal((await batch()).unchanged,2);
     assert.equal((await invoke('load-reading-state')).progress[first.id].page,2);
     console.log('PASS Whole-library online metadata task saves both SQLite records, preserves progress and skips identical writes on refresh.');
+
+    await page.locator('.sidebar [data-action="settings"]').click();
+    await page.locator('[data-action="system-settings"]').click();
+    const system=page.getByRole('dialog',{name:'系统与阅读设置'});
+    await system.getByLabel('最小化时隐藏到托盘').check();
+    await system.getByRole('button',{name:'保存系统设置'}).click();
+    await system.getByRole('status').filter({hasText:'系统设置已保存'}).waitFor();
+    const metadataFolder=path.join(fixture,'separate-metadata');
+    fs.mkdirSync(metadataFolder);
+    await application.evaluate(({dialog},folder)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[folder]});},metadataFolder);
+    await system.getByRole('button',{name:'选择元数据目录'}).click();
+    await system.locator('.data-location-info').filter({hasText:metadataFolder}).waitFor();
+    assert.equal((await invoke('load-setting')).metadataPath,metadataFolder);
+    assert(fs.existsSync(path.join(metadataFolder,'metadata.sqlite')));
+    await system.getByRole('button',{name:'使用默认目录'}).click();
+    await system.getByRole('status').filter({hasText:'已恢复默认元数据目录'}).waitFor();
+    assert.equal((await invoke('data-locations')).metadataPath,path.join(data,'metadata.sqlite'));
+    assert.equal((await invoke('load-setting')).minimizeToTray,true);
+    await page.keyboard.press('Escape');
+
+    await page.locator(`#room [data-book="${second.id}"]`).press('Enter');
+    const options=page.getByRole('dialog',{name:'书籍详情',exact:true});
+    await options.getByRole('switch',{name:'使用外部阅读器'}).uncheck();
+    await options.locator('[data-read]').click();
+    await page.waitForFunction(()=>document.querySelector('.reader-body img')?.naturalWidth>0);
+    await page.locator('#reader-page-input').fill('3');
+    await page.locator('#reader-page-input').press('Enter');
+    await page.waitForFunction(()=>document.querySelector('[data-reader-page="3"] img')?.naturalWidth>0);
+    await application.evaluate(({app,clipboard,shell},folder)=>{
+      clipboard.writeImage=image=>{app.fixtureCopiedSize=image.getSize();};
+      shell.trashItem=async filename=>{
+        const path=process.getBuiltinModule('path');
+        await process.getBuiltinModule('fs/promises').rename(filename,path.join(folder,'page-'+path.basename(filename)));
+      };
+    },recycle);
+    await page.getByText('书页与切换',{exact:true}).click();
+    await page.getByRole('button',{name:'复制当前页'}).click();
+    await page.locator('#toast').filter({hasText:'图片已复制'}).waitFor();
+    assert.deepEqual(await application.evaluate(({app})=>app.fixtureCopiedSize),{width:80,height:120});
+    await page.getByRole('button',{name:'设当前页为封面'}).click();
+    await page.locator('#toast').filter({hasText:'封面已保存'}).waitFor();
+    const withCover=(await invoke('load-book-list',false)).find(book=>book.id===second.id);
+    assert.match(path.basename(withCover.coverPath),/^custom-/);
+    const thirdFile=path.join(second.filepath,'3.png');
+    page.once('dialog',dialog=>dialog.dismiss());
+    await page.getByRole('button',{name:'删除当前页'}).click();
+    assert.equal(sha256(thirdFile),originals.get(thirdFile));
+    page.once('dialog',dialog=>dialog.accept());
+    await page.getByRole('button',{name:'删除当前页'}).click();
+    await page.waitForFunction(()=>document.querySelector('#reader-page')?.textContent==='3 / 3'&&document.querySelector('[data-reader-page="3"] img')?.naturalWidth>0);
+    await page.locator('[data-action="exit-reader"]').click();
+    await page.locator('.reader').waitFor({state:'detached'});
+    assert.equal(sha256(path.join(recycle,'page-3.png')),originals.get(thirdFile));
+    const edited=(await invoke('load-book-list',false)).find(book=>book.id===second.id);
+    assert.equal(edited.pageCount,3);assert.equal(edited.coverPath,withCover.coverPath);
+    assert.equal(edited.readCount,withCover.readCount);
+    assert.equal((await invoke('load-reading-state')).progress[second.id].page,3);
+    assert.deepEqual(errors,[]);
+    console.log('PASS Migrated classic profile, metadata directory switching, tray settings, page clipboard, cover, confirmed recycle and resume through the current UI.');
+
   } finally {
     await close();
     if(!isWithin(os.tmpdir(),fixture)||!path.basename(fixture).startsWith('yanruyu-management-desktop-'))throw new Error('Unsafe fixture cleanup');

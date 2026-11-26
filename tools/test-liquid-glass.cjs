@@ -152,7 +152,7 @@ async function lifecycle(browser, fixtures) {
     pass('Glass theme restores its actual filter resources after reload');
 
     const rounds = [];
-    for (const theme of ['paper', 'forest', 'paper']) {
+    for (const theme of ['paper', 'dark', 'paper']) {
       await page.locator('.appearance-button').click();
       await page.locator(`[data-theme-choice="${theme}"]`).click();
       await assertFiltersReleased(page, true);

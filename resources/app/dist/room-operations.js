@@ -45,30 +45,61 @@ export function createOperationsUI({ invoke, getState, showModal, openBook, onLi
   }
   async function systemSettings() {
     const setting = getState().setting;
-    const options = [['loadOnStart','启动后增量扫描书库'],['closeToTray','关闭窗口时保留在托盘'],['minimizeOnStart','启动时最小化'],['startOnLogin','登录 Windows 后启动'],['hideTitleBar','使用应用内标题栏'],['readerClickToTurn','点击页面左右区域翻页']];
+    const options = [['loadOnStart','启动后增量扫描书库'],['closeToTray','关闭窗口时保留在托盘'],['minimizeToTray','最小化时隐藏到托盘'],['minimizeOnStart','启动时最小化'],['startOnLogin','登录 Windows 后启动'],['hideTitleBar','使用应用内标题栏'],['readerClickToTurn','点击页面左右区域翻页'],['autoNextManga','读到末页后再次向前翻页时打开下一本'],['enabledLANBrowsing','向局域网客户端共享书库']];
     const dialog = modal(`<h2>系统与阅读设置</h2><form class="system-settings">${options.map(([key,label]) => `<label><input type="checkbox" name="${key}" ${setting[key]?'checked':''}><span>${label}</span></label>`).join('')}
-      <p class="path">启动、标题栏和托盘选项会在下次启动时完整生效。内置阅读器的模式、方向、缩放和快捷键可在阅读工具栏查看。</p>
-      <div class="detail-actions"><button class="pill-button primary" type="submit">保存系统设置</button><button class="pill-button" type="button" data-action="classic">旧阅读器与高级兼容选项</button></div></form>
-      <section><h3>数据位置</h3><div class="data-location-info"><p class="path">正在读取数据目录…</p></div><button class="pill-button" data-action="data-protection">备份与恢复</button></section><p class="path" role="status"></p>`, '系统与阅读设置');
+      <label>单页显示宽度上限（像素）<input type="number" min="0" max="16384" step="1" name="widthLimit" placeholder="自动" value="${esc(setting.widthLimit ?? '')}"></label>
+      <p class="path">宽度留空或填 0 时随窗口适配。启动、标题栏和托盘选项会在下次启动时完整生效。</p>
+      <div class="detail-actions"><button class="pill-button primary" type="submit">保存系统设置</button></div></form>
+      <section><h3>外部阅读器</h3><p class="path" data-external-program></p><div class="detail-actions"><button class="pill-button" data-select-program>选择程序</button><button class="pill-button" data-reset-program>使用系统默认程序</button></div></section>
+      <section><h3>数据位置</h3><div class="data-location-info"><p class="path">正在读取数据目录…</p></div><p class="path">更换目录会打开该目录中的元数据文件。可以先在此处备份当前数据。</p><div class="detail-actions"><button class="pill-button" data-select-metadata>选择元数据目录</button><button class="pill-button" data-reset-metadata>使用默认目录</button><button class="pill-button" data-action="data-protection">备份与恢复</button></div></section><p class="path" role="status"></p>`, '系统与阅读设置');
     const form = dialog.querySelector('form');
-    form.onsubmit = async event => {
-      event.preventDefault(); const submit = form.querySelector('[type="submit"]'); submit.disabled = true;
-      try {
-        const latest = await invoke('load-setting'), patch = Object.fromEntries(options.map(([key]) => [key,form.elements[key].checked]));
-        const next = {...latest,...patch};
-        const saved = await invoke('save-setting',next); getState().setting = saved || next;
-        status(dialog, '系统设置已保存。');
-      } catch (error) { status(dialog, errorText(error)); }
-      finally { submit.disabled = false; }
-    };
-    try {
+    let saving = false;
+    function showProgram() {
+      dialog.querySelector('[data-external-program]').textContent = String(getState().setting.imageExplorer || '').replace(/^"|"$/g, '') || '系统默认程序';
+    }
+    async function showLocations() {
       const locations = await invoke('data-locations');
-      if (dialog.isConnected) {
-        const host = dialog.querySelector('.data-location-info');
-        host.innerHTML = `<p class="path">书库数据目录：${esc(locations.storePath)}</p><p class="path">元数据文件：${esc(locations.metadataPath)}</p><button class="pill-button" data-show-data-folder>在文件夹中显示</button>`;
-        host.querySelector('button').onclick = () => invoke('show-file', locations.storePath);
-      }
-    } catch (error) { if (dialog.isConnected) dialog.querySelector('.data-location-info').textContent = errorText(error); }
+      if (!dialog.isConnected) return;
+      const host = dialog.querySelector('.data-location-info');
+      host.innerHTML = `<p class="path">书库数据目录：${esc(locations.storePath)}</p><p class="path">元数据文件：${esc(locations.metadataPath)}</p><button class="pill-button" data-show-data-folder>在文件夹中显示</button>`;
+      host.querySelector('button').onclick = () => invoke('show-file', locations.storePath);
+    }
+    async function save(pickPatch, message, afterSave) {
+      if (saving) return;
+      saving = true;
+      const buttons = [...dialog.querySelectorAll('button:enabled')].filter(button => !button.matches('[data-action]'));
+      buttons.forEach(button => { button.disabled = true; });
+      try {
+        const patch = await pickPatch();
+        if (!patch || !dialog.isConnected) return;
+        const latest = await invoke('load-setting');
+        const next = { ...latest, ...patch };
+        const saved = await invoke('save-setting', next);
+        getState().setting = saved || next;
+        status(dialog, message);
+        await afterSave?.();
+      } catch (error) { status(dialog, errorText(error)); }
+      finally { saving = false; buttons.forEach(button => { button.disabled = false; }); }
+    }
+    form.onsubmit = async event => {
+      event.preventDefault();
+      await save(() => ({ ...Object.fromEntries(options.map(([key]) => [key, form.elements[key].checked])),
+        widthLimit: form.elements.widthLimit.valueAsNumber || 0 }), '系统设置已保存。');
+    };
+    dialog.querySelector('[data-select-program]').onclick = () => save(async () => {
+      const imageExplorer = await invoke('select-file', '选择外部阅读器', [{name:'阅读器程序', extensions:['exe']}]);
+      return imageExplorer ? { imageExplorer } : null;
+    }, '外部阅读器已保存。', showProgram);
+    dialog.querySelector('[data-reset-program]').onclick = () => save(() => ({ imageExplorer: '' }), '已恢复系统默认程序。', showProgram);
+    const refreshMetadata = async () => { await showLocations(); await onLibraryChange(); };
+    dialog.querySelector('[data-select-metadata]').onclick = () => save(async () => {
+      const metadataPath = await invoke('select-folder', '选择元数据目录');
+      return metadataPath ? { metadataPath } : null;
+    }, '元数据目录已保存。', refreshMetadata);
+    dialog.querySelector('[data-reset-metadata]').onclick = () => save(() => ({ metadataPath: '' }), '已恢复默认元数据目录。', refreshMetadata);
+    showProgram();
+    try { await showLocations(); }
+    catch (error) { if (dialog.isConnected) dialog.querySelector('.data-location-info').textContent = errorText(error); }
   }
   async function fileOperation(id, kind) {
     const preview = await invoke(kind==='move'?'book-file-preview-move':'book-file-preview-recycle', id);
