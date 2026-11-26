@@ -2,7 +2,7 @@
 
 [中文](README.md) · **English**
 
-A Windows desktop manga management and reading application customized from exhentai-manga-manager 1.6.15. Current version: **2.0.0-preview.2**.
+A Windows desktop manga management and reading application customized from exhentai-manga-manager 1.6.15. The current stable release is **2.0.0**.
 
 ## Screenshots
 
@@ -22,9 +22,9 @@ Tested in full-screen mode at 2560 × 1080 using a separate sample library.
 
 ## Download and Usage
 
-The current source includes a **2.0 development preview**. Run `npm run dev`, then enable the preview in Reading Room Settings to use the shared desk, library table, and reading room. Book details provide online metadata previews; the sidebar provides reading history and imports, and the library includes collection management. See the [2.0 verification matrix](docs/颜如玉2.0功能验收矩阵.md) for migration and validation details.
+Version 2.0 opens directly into the unified workspace. Use the desk to import a library or resume reading, the library to browse covers or a table and manage collections in bulk, and the reading room to browse the 3D bookshelf. Book details let you preview online metadata and choose which fields to apply. See the [2.0 verification matrix](docs/颜如玉2.0功能验收矩阵.md) for migration and validation details.
 
-Download the Windows x64 ZIP from [Releases][releases], extract it to a new folder, and double-click `exhentai-manga-manager.exe`. Node.js is not required for normal use.
+Download `yanruyu-2.0.0-windows-x64.zip` from the [2.0.0 release][releases], extract it to a new folder, and double-click `exhentai-manga-manager.exe`. Node.js is not required for normal use. The release includes a `SHA256SUMS.txt` file for verifying the download.
 
 Upon first run, the program defaults to using the system user’s app data directory. Create a `data` folder next to the program to enable portable mode; you can also specify the absolute path to a separate data directory via the environment variable `YANRUYU_DATA_DIR`.
 
@@ -44,6 +44,8 @@ The development entry point builds the current source code and locked production
 | Command | Purpose |
 | --- | --- |
 | `npm run check` | JavaScript syntax, release source file allowlist, and configuration format |
+| `npm run build:ui` | Type-check and build the Vue renderer into `resources/app/dist/app/` |
+| `npm run typecheck` | Check Vue and TypeScript types |
 | `npm test` | Two-book workspace smoke test for room navigation, narrow windows, and cover fallback |
 | `npm run test:engineering` | Data path isolation, release allowlist, and runtime optimization checks |
 | `npm run test:desktop` | Verifies real Electron, IPC, SQLite, and image decoding using a neutral test library |
@@ -64,6 +66,8 @@ The test entry point installs runtime dependencies in a new staging directory. T
 | --- | --- |
 | `resources/app/index.js`, `modules/`, `fileLoader/` | Electron main process, database, and file handling |
 | `resources/app/preload.js` | Restricted desktop interface bridge |
+| `src/renderer/` | Vue, Pinia, and TypeScript renderer source |
+| `resources/app/dist/app/` | Generated Vue renderer output |
 | `resources/app/dist/room*.js` and associated modules, CSS | Directly executable, maintainable front-end source code for the reading room |
 | `resources/app/dist/vendor/` | Bundled frontend dependencies and licenses |
 | `resources/extraResources/` | 7-Zip and its accompanying license |
@@ -95,7 +99,7 @@ This project is based on `v1.6.15` of [SchneeHertz/exhentai-manga-manager][upstr
 
 Electron, Three.js, 7-Zip, and other dependencies are subject to their respective accompanying licenses. For details on upstream sources, retained binaries, and the source recovery boundaries, see [Provenance][provenance].
 
-[releases]: https://github.com/Gazesphotograph/yanruyu-reading-room/releases
+[releases]: https://github.com/Gazesphotograph/YanRuYu-Reading-Room/releases/tag/v2.0.0
 [upstream]: https://github.com/SchneeHertz/exhentai-manga-manager
 [upgrade]: docs/使用与升级.md
 [provenance]: docs/源码来源与恢复范围.md

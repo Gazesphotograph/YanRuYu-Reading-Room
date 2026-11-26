@@ -29,7 +29,7 @@ const waitCount=(page,count)=>page.waitForFunction(count=>document.querySelector
   const browser=await chromium.launch(launchOptions());
   try{
     const context=await browser.newContext({viewport:{width:1560,height:1000}});
-    const model=createFakeModel(fixture.books,fixture.pages);await attachFakeIpc(context,model);
+    const model=createFakeModel(fixture.books,fixture.pages);await attachFakeIpc(context, model, { startPage:'library' });
     await context.addInitScript(()=>{
       localStorage.setItem('room-theme',JSON.stringify('glass'));localStorage.setItem('room-view',JSON.stringify('grid'));
       localStorage.setItem('room-progress',JSON.stringify({'gallery-book-00':{page:2,total:5,time:2},'gallery-book-02':{page:5,total:5,time:1}}));
@@ -101,8 +101,8 @@ const waitCount=(page,count)=>page.waitForFunction(count=>document.querySelector
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     pass('Compact windows expose a working tag picker and preserve selections without horizontal overflow');
     await page.setViewportSize({width:1560,height:1000});await page.locator('[data-action="clear-tags"]').click();
-    await page.locator('[data-view="shelf"]').click();await page.waitForSelector('.scene-viewport[data-scene-state="ready"]');
-    await page.locator('.shelf-heading').click();await page.mouse.move(1550,980);await page.waitForTimeout(300);
+    await page.locator('button[data-workspace="room"]').click();await page.waitForSelector('.scene-viewport[data-scene-state="ready"]');
+    await page.locator('.room-context').click();await page.mouse.move(1550,980);await page.waitForTimeout(300);
     await page.screenshot({path:path.join(out,'glass-home.png'),fullPage:true});
     assert.deepEqual(errors,[]);pass('New controls and rendering paths complete without renderer errors');
   }finally{await browser.close();fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({checks,errors,performance:{buildMs,filterMs}},null,2));console.log('Report: '+path.join(out,'checks.json'));}

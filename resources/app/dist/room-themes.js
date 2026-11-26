@@ -4,11 +4,8 @@ export const THEMES = [
     name: '颜如玉 · 暖白',
     label: 'PAPER & WALNUT',
     desc: '暖纸墙、胡桃木、午后窗光与小猫。',
-    colors: ['#f3f1eb', '#315445', '#a08b70'],
+    colors: ['#f5f6f8', '#137963', '#d4503a'],
     dark: false,
-    eyebrow: 'A ROOM FOR YOUR STORIES',
-    headline: '书中自有<em>颜如玉</em>',
-    motto: 'Quiet hours.',
     brand: 'YAN RU YU',
   },
   {
@@ -16,11 +13,8 @@ export const THEMES = [
     name: '颜如玉 · 静夜',
     label: 'NEUTRAL DARK',
     desc: '中性深灰、深木书架、柔雾夜窗与静默光感。',
-    colors: ['#18181b', '#93b4d8', '#6e7078'],
+    colors: ['#0c0e13', '#38bdf8', '#34d399'],
     dark: true,
-    eyebrow: 'YAN RU YU / AFTER HOURS',
-    headline: '书中自有<em>颜如玉</em>',
-    motto: 'Quiet night.',
     brand: 'YAN RU YU',
   },
   {
@@ -28,11 +22,8 @@ export const THEMES = [
     name: '纯白 · 液态玻璃',
     label: 'PURE / LIQUID GLASS',
     desc: '纯白玻璃、水磨石、薄纱晴窗与桉叶。',
-    colors: ['#f5f5f7', '#2469b5', '#d8dce2'],
+    colors: ['#f2f6fc', '#1d64e0', '#0d9488'],
     dark: false,
-    eyebrow: 'A CLEAR SPACE / YOUR STORIES',
-    headline: '书中自有<em>颜如玉</em>',
-    motto: 'A little clarity.',
     brand: 'YAN RU YU',
   },
   {
@@ -40,11 +31,8 @@ export const THEMES = [
     name: 'EX 私人图库',
     label: 'EXHENTAI INSPIRED',
     desc: '织纹墙、石材地板与米金色静夜。',
-    colors: ['#34353b', '#e2d1a6', '#98969d'],
+    colors: ['#1a1b20', '#e4c37b', '#df6a57'],
     dark: true,
-    eyebrow: 'PRIVATE GALLERY / LOCAL ARCHIVE',
-    headline: '书中自有<em>颜如玉</em>',
-    motto: 'The archives.',
     brand: 'YAN RU YU',
   },
 ];
@@ -115,9 +103,6 @@ export function paintTheme(id) {
     if (html) element.innerHTML = value;
     else element.textContent = value;
   };
-  set('.hero .eyebrow', theme.eyebrow);
-  set('.hero h1', theme.headline, true);
-  set('.room-card', `${theme.motto}<small>${theme.brand}</small>`, true);
   set('.brand small', theme.brand);
   set('#active-theme-name', theme.name);
   set('.theme-current', `当前：${theme.name} · 点击切换，自动保存`);

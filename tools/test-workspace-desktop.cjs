@@ -86,8 +86,7 @@ async function main() {
         return send(channel, ...args);
       };
     }, library);
-    await page.locator('[data-action="settings"]').click();
-    await page.getByRole('button', { name: '启用 2.0 预览' }).click();
+    assert.equal(await nav('书桌').getAttribute('aria-current'),'page');
     await page.locator('#reading-desk').getByRole('button', { name: '选择书库文件夹' }).click();
     await page.locator('[data-desk-book]').first().waitFor();
     const partial = await invoke('load-book-list', false);
@@ -108,7 +107,7 @@ async function main() {
     await page.waitForFunction(() => !window.YanruyuTasks.tasks.some(task => task.kind === 'scan' && task.status === 'running'));
     const books = await invoke('load-book-list', false);
     assert.equal(books.length, 14);
-    console.log('PASS Enable preview, choose an isolated library, scan, open from the desk and read a double-page spread');
+    console.log('PASS Start on the desk, choose an isolated library, scan, open from the desk and read a double-page spread');
 
     // Fail exactly the second database write and retry against the same book.
     const metadata = await db('metadata.sqlite');
@@ -274,7 +273,7 @@ async function main() {
     console.log('PASS Page selection, cross-page batch preview, cancellation, scoped edits and undo through the library table');
     const search = page.getByLabel('搜索书名、作者或标签');
     await search.fill('neutral');
-    await page.waitForFunction(() => document.querySelector('#results').textContent.includes('共 14 本'));
+    await page.waitForFunction(() => document.querySelector('#shelf-title')?.textContent.includes('筛选结果 / 14 本'));
     for (const book of twins) {
       const checkbox = page.locator(`[data-check-book="${book.id}"]`);
       if (!(await checkbox.count())) {
@@ -441,14 +440,13 @@ async function main() {
     console.log('PASS Lost selection after real organizer merge and removal preserves the query, restores keyboard focus, and recovers the record through history');
 
     await page.locator('[data-action="settings"]').click();
-    await page.getByRole('button', { name: '返回原界面' }).click();
+    assert.equal(await page.locator('[data-action="workspace-preview"], #setting-view').count(),0);
+    await page.getByRole('combobox',{name:'启动页'}).selectOption('library');
     await close(); await launch();
-    await page.locator('[data-action="settings"]').waitFor();
-    assert.equal(await page.locator('.workspace-nav').isVisible(), false);
-    assert.equal(await page.locator('[data-action="classic"]').count(), 0);
+    assert.equal(await nav('书库').getAttribute('aria-current'),'page');
     for (const [filename, digest] of originals) assert.equal(sha256(filename), digest);
     assert.deepEqual(errors, []);
-    console.log('PASS Preview can be disabled, all original image hashes are intact, and the renderer reports no uncaught errors');
+    console.log('PASS Library startup persists, all original image hashes are intact, and the renderer reports no uncaught errors');
   } catch (error) {
     if (page && !page.isClosed()) {
       const output = path.join(root, 'tools', '.artifacts', 'workspace-desktop');

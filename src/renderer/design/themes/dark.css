@@ -1,47 +1,47 @@
 /* Neutral Dark — Charcoal gray night reading theme (shared pixel-for-pixel with native runtime) */
 :root[data-room-theme="dark"] {
-  --yr-bg: #18181b;
-  --yr-bg-sidebar: #121215;
-  --yr-surface: #202024;
-  --yr-surface-subtle: #1b1b1f;
-  --yr-surface-raised: #27272c;
-  --yr-surface-hover: #2b2b31;
-  --yr-overlay: rgb(0 0 0 / 0.58);
+  --yr-bg: #0c0e13;
+  --yr-bg-sidebar: #080a0e;
+  --yr-surface: #141821;
+  --yr-surface-subtle: #10141c;
+  --yr-surface-raised: #1b212e;
+  --yr-surface-hover: #212838;
+  --yr-overlay: rgb(0 0 0 / 0.62);
 
-  --yr-text: #ececf0;
-  --yr-text-muted: #a1a1aa;
+  --yr-text: #f1f4f9;
+  --yr-text-muted: #8b95a7;
 
-  --yr-border: #333339;
-  --yr-border-strong: #484852;
+  --yr-border: #232a38;
+  --yr-border-strong: #364154;
 
-  --yr-accent: #93b4d8;
-  --yr-accent-hover: #a6c2e1;
-  --yr-accent-secondary: #d4b483;
-  --yr-accent-soft: #2b2e36;
-  --yr-accent-ink: #141417;
+  --yr-accent: #38bdf8;
+  --yr-accent-hover: #56c9fa;
+  --yr-accent-secondary: #f97352;
+  --yr-accent-soft: #13283a;
+  --yr-accent-ink: #06131a;
 
-  --yr-danger: #f08088;
-  --yr-danger-hover: #f5979e;
-  --yr-danger-soft: #382226;
-  --yr-danger-ink: #181012;
+  --yr-danger: #f28b92;
+  --yr-danger-hover: #f7a3a9;
+  --yr-danger-soft: #301d22;
+  --yr-danger-ink: #160d0f;
 
-  --yr-success: #7cc6a0;
-  --yr-success-soft: #1f332a;
-  --yr-warning: #dfb577;
-  --yr-warning-soft: #362c1d;
+  --yr-success: #34d399;
+  --yr-success-soft: #122d24;
+  --yr-warning: #fbbf24;
+  --yr-warning-soft: #2e2518;
 
-  --yr-focus-ring: #93b4d8;
+  --yr-focus-ring: #38bdf8;
   --yr-shadow-rgb: 0 0 0;
 
-  --yr-radius-control: var(--yr-radius-sm);
-  --yr-radius-panel: var(--yr-radius-md);
-  --yr-radius-dialog: var(--yr-radius-lg);
+  --yr-radius-control: var(--yr-radius-md);
+  --yr-radius-panel: var(--yr-radius-lg);
+  --yr-radius-dialog: var(--yr-radius-xl);
 
-  --yr-reader-bg: #101012;
-  --yr-reader-bar: #1a1a1e;
-  --yr-reader-ink: #ececf0;
-  --yr-reader-muted: #a1a1aa;
-  --yr-reader-focus: #93b4d8;
+  --yr-reader-bg: #080a0e;
+  --yr-reader-bar: #10131a;
+  --yr-reader-ink: #f1f4f9;
+  --yr-reader-muted: #8b95a7;
+  --yr-reader-focus: #38bdf8;
 
   color-scheme: dark;
 }

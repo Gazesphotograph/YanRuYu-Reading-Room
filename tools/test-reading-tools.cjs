@@ -57,7 +57,7 @@ const { createReadingStateStore } = require('../resources/app/modules/reading_st
     });
     await context.addInitScript(() => {
       if (!localStorage.getItem('reader-tools-seeded')) {
-        localStorage.setItem('room-view', '"grid"');localStorage.setItem('room-reading-mode', '"paged"');
+        localStorage.setItem('room-workspace-start-page', '"library"');localStorage.setItem('room-reading-mode', '"paged"');
         localStorage.setItem('reader-tools-seeded', 'true');
       }
       const listeners = new Map();

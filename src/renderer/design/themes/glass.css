@@ -4,48 +4,48 @@
  * with WCAG AA (>=4.5:1) text contrast and zero optical refraction.
  */
 :root[data-room-theme="glass"] {
-  --yr-bg: #f5f5f7;
-  --yr-bg-sidebar: #f8f9fb;
-  --yr-surface: #fafbfc;
-  --yr-surface-subtle: #f1f3f6;
+  --yr-bg: #f2f6fc;
+  --yr-bg-sidebar: rgb(255 255 255 / 0.46);
+  --yr-surface: #fbfcfe;
+  --yr-surface-subtle: rgb(255 255 255 / 0.64);
   --yr-surface-raised: #ffffff;
-  --yr-surface-hover: #eaeef4;
-  --yr-overlay: rgb(39 48 66 / 0.34);
+  --yr-surface-hover: rgb(255 255 255 / 0.78);
+  --yr-overlay: rgb(232 242 255 / 0.10);
 
-  --yr-text: #292e36;
-  --yr-text-muted: #636b77;
+  --yr-text: #1b2430;
+  --yr-text-muted: #5d697a;
 
-  --yr-border: #d7dde6;
-  --yr-border-strong: #b7c1cf;
+  --yr-border: rgb(72 88 112 / 0.14);
+  --yr-border-strong: rgb(72 88 112 / 0.24);
 
-  --yr-accent: #2469b5;
-  --yr-accent-hover: #1d5798;
-  --yr-accent-secondary: #356899;
-  --yr-accent-soft: #e3edf8;
+  --yr-accent: #1d64e0;
+  --yr-accent-hover: #1553c4;
+  --yr-accent-secondary: #e04c5f;
+  --yr-accent-soft: rgb(220 234 255 / 0.74);
   --yr-accent-ink: #ffffff;
 
-  --yr-danger: #c03540;
-  --yr-danger-hover: #a52b35;
-  --yr-danger-soft: #fcecef;
+  --yr-danger: #c42e3b;
+  --yr-danger-hover: #a6232f;
+  --yr-danger-soft: #fdf0f1;
   --yr-danger-ink: #ffffff;
 
-  --yr-success: #1f6e52;
-  --yr-success-soft: #e3f3ec;
-  --yr-warning: #995c10;
-  --yr-warning-soft: #fef4e4;
+  --yr-success: #196f4d;
+  --yr-success-soft: #e7f6ef;
+  --yr-warning: #9a5708;
+  --yr-warning-soft: #fef4e6;
 
-  --yr-focus-ring: #2469b5;
-  --yr-shadow-rgb: 39 48 66;
+  --yr-focus-ring: #1d64e0;
+  --yr-shadow-rgb: 28 42 66;
 
   --yr-radius-control: 10px;
   --yr-radius-panel: 14px;
   --yr-radius-dialog: 18px;
 
-  --yr-reader-bg: #f0f1f4;
-  --yr-reader-bar: #ffffff;
-  --yr-reader-ink: #292e36;
-  --yr-reader-muted: #636b77;
-  --yr-reader-focus: #2469b5;
+  --yr-reader-bg: #eef2f8;
+  --yr-reader-bar: rgb(255 255 255 / 0.62);
+  --yr-reader-ink: #1b2430;
+  --yr-reader-muted: #5d697a;
+  --yr-reader-focus: #1d64e0;
 
   color-scheme: light;
 }

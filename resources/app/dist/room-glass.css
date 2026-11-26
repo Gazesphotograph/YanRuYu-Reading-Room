@@ -1,35 +1,47 @@
 /* Pure white liquid glass. Controls and large dialog sheets refract only their
    backdrop; the text and hit targets keep their original geometry. */
 :root[data-room-theme="glass"] {
-  --paper: #f5f5f7;
-  --side: rgb(255 255 255 / .36);
-  --surface: #fafbfc;
-  --ink: #292e36;
-  --muted: #636b77;
-  --line: rgb(80 91 111 / .16);
-  --green: #2469b5;
-  --orange: #356899;
-  --soft-accent: rgb(226 235 247 / .63);
+  --paper: #f2f6fc;
+  --side: rgb(255 255 255 / .46);
+  --surface: #fbfcfe;
+  --surface-raised: #ffffff;
+  --ink: #1b2430;
+  --muted: #5d697a;
+  --line: rgb(72 88 112 / .14);
+  --green: #1d64e0;
+  --orange: #e04c5f;
+  --seal: #e04c5f;
+  --cta-bg: linear-gradient(135deg, #2773f0 0%, #1553c4 100%);
+  --cta-shadow: 0 8px 22px -6px rgb(29 100 224 / .36);
+  --soft-accent: rgb(220 234 255 / .74);
   --active-ink: #fff;
-  --control-bg: #2469b5;
-  --panel-radius: 18px;
-  --shadow-rgb: 39 48 66;
-  --reader-bg: #f0f1f4;
-  --reader-bar: rgb(255 255 255 / .48);
-  --reader-ink: #292e36;
-  --reader-muted: #636b77;
-  --reader-focus: #2469b5;
-  --reader-line: rgb(80 91 111 / .15);
-  --reader-control-bg: rgb(225 231 240 / .62);
+  --control-bg: #1d64e0;
+  --c-cyan: #0284c7;
+  --c-emerald: #0d9488;
+  --c-amber: #d97706;
+  --c-rose: #e11d48;
+  --c-violet: #6366f1;
+  --c-indigo: #4f46e5;
+  --c-teal: #0d9488;
+  --panel-radius: 14px;
+  --shadow-rgb: 28 42 66;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%235d697a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --reader-bg: #eef2f8;
+  --reader-bar: rgb(255 255 255 / .62);
+  --reader-ink: #1b2430;
+  --reader-muted: #5d697a;
+  --reader-focus: #1d64e0;
+  --reader-line: rgb(72 88 112 / .14);
+  --reader-control-bg: rgb(222 234 252 / .58);
   --glass-edge: inset 0 1px 0 #fff, inset 1px 0 0 rgb(255 255 255 / .8), inset 0 -1px 0 rgb(255 255 255 / .66);
-  --glass-shadow: 0 2px 5px rgb(var(--shadow-rgb) / .035), 0 9px 24px -12px rgb(var(--shadow-rgb) / .2);
+  --glass-shadow: 0 2px 6px rgb(var(--shadow-rgb) / .04), 0 10px 26px -14px rgb(var(--shadow-rgb) / .18);
   color-scheme: light;
 }
 
 [data-room-theme="glass"] body {
-  background: radial-gradient(ellipse at 86% 10%, rgb(216 222 232 / .48), transparent 43%),
-    radial-gradient(ellipse at 10% 84%, rgb(230 233 240 / .65), transparent 45%),
-    linear-gradient(135deg, #fff 6%, #f6f6f8 50%, #f0f1f4);
+  background: radial-gradient(ellipse at 86% 10%, rgb(198 220 250 / .52), transparent 44%),
+    radial-gradient(ellipse at 12% 84%, rgb(216 236 248 / .58), transparent 46%),
+    linear-gradient(140deg, #ffffff 6%, #f4f7fc 52%, #edf2fa);
   background-attachment: fixed;
 }
 
@@ -89,38 +101,66 @@
 [data-room-theme="glass"] .sidebar {
   inset: 12px auto 12px 12px;
   width: calc(var(--nav-width) - 16px);
-  padding: 27px 15px 18px;
-  border-radius: 26px;
+  padding: 18px 12px 14px;
+  border-radius: 24px;
   box-shadow: var(--glass-edge), 0 8px 30px -16px rgb(var(--shadow-rgb) / .16);
 }
-[data-room-theme="glass"] .brand { gap: 10px; padding-inline: 10px; }
+[data-room-theme="glass"] .brand { gap: 10px; padding-inline: 6px; }
 [data-room-theme="glass"] .brand-mark {
-  width: 38px; height: 41px;
-  border: 1px solid #fff;
-  border-radius: 14px;
-  color: #596574;
-  background: linear-gradient(145deg, #ffffffba, #ffffff30);
-  box-shadow: var(--glass-edge), var(--glass-shadow);
+  width: 36px; height: 36px;
+  border: 1px solid rgb(255 255 255 / .86);
+  border-radius: 12px;
+  color: #fff;
+  background: linear-gradient(145deg, #f05a6d, #cf3650);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .45), 0 6px 16px -6px rgb(224 76 95 / .45);
 }
-[data-room-theme="glass"] .brand strong { font-size: 24px; letter-spacing: 3px; }
-[data-room-theme="glass"] .brand small { font-size: 7px; letter-spacing: .85px; }
-[data-room-theme="glass"] .nav-btn { border-radius: 15px; gap: 10px; padding-inline: 12px; }
+[data-room-theme="glass"] .brand strong { font-size: 19px; letter-spacing: 2px; }
+[data-room-theme="glass"] .brand small { font-size: 8.5px; letter-spacing: 1.2px; }
+[data-room-theme="glass"] .nav-btn { border-radius: 12px; gap: 9px; padding-inline: 8px; }
 [data-room-theme="glass"] .nav-btn.active {
-  color: #245b9a;
+  color: #1651b4;
   border-color: rgb(255 255 255 / .85);
-  background: linear-gradient(135deg, #ffffffb8, #e5edf778);
+  background: linear-gradient(135deg, #ffffffcc, #e2edff8c);
   box-shadow: var(--glass-edge), var(--glass-shadow);
 }
-[data-room-theme="glass"] .nav-btn:hover:not(.active) { background: rgb(255 255 255 / .44); color: var(--ink); }
-[data-room-theme="glass"] .library-note { font-size: 11px; border-top-color: rgb(83 97 121 / .12); }
+[data-room-theme="glass"] .nav-btn:hover:not(.active) { background: rgb(255 255 255 / .48); color: var(--ink); }
+[data-room-theme="glass"] :is(.now-reading-card, .library-note) {
+  border-color: rgb(255 255 255 / .88);
+  background: rgb(255 255 255 / .56);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+}
 [data-room-theme="glass"] .topbar {
   height: 54px;
   margin: 12px var(--page-gutter) 0;
-  padding: 0 14px 0 20px;
-  border-radius: 21px;
+  padding: 0 14px 0 16px;
+  border-radius: 20px;
   margin-bottom: 8px;
 }
-[data-room-theme="glass"] .breadcrumb { gap: 10px; font-size: 11px; }
+[data-room-theme="glass"] .workspace-nav {
+  border-color: rgb(255 255 255 / .88);
+  border-radius: 999px;
+  background: rgb(255 255 255 / .38);
+  box-shadow: var(--glass-edge);
+}
+[data-room-theme="glass"] .workspace-nav button { border-radius: 999px; }
+[data-room-theme="glass"] .workspace-nav [aria-current="page"] {
+  color: #1651b4;
+  background: rgb(255 255 255 / .9);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgb(28 42 66 / .1);
+}
+[data-room-theme="glass"] .search-capsule {
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+[data-room-theme="glass"] .search-capsule:focus-within { box-shadow: none; }
+[data-room-theme="glass"] #search-scope {
+  border: 1px solid rgb(255 255 255 / .9);
+  border-radius: 999px;
+  background-color: rgb(255 255 255 / .42);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+}
 [data-room-theme="glass"] .top-actions { gap: 9px; }
 [data-room-theme="glass"] .window-controls { padding-left: 7px; border-color: rgb(83 97 121 / .12); }
 [data-room-theme="glass"] .window-controls button { border-radius: 9px; }
@@ -137,17 +177,25 @@
 [data-room-theme="glass"] .search kbd { border-radius: 5px; border-color: rgb(80 91 111 / .14); background: #ffffff40; }
 [data-room-theme="glass"] :is(.appearance-button:hover, .pill-button:not(.primary):hover, .pagination button:hover:not(:disabled)) { border-color: #fff; background: rgb(255 255 255 / .5); }
 [data-room-theme="glass"] :is(.appearance-button, .pill-button) { transition: background-color .18s, box-shadow .18s, scale .18s cubic-bezier(.2,.8,.2,1); }
-[data-room-theme="glass"] .pill-button.primary { color: #fff; border-color: #6594cd; background: linear-gradient(145deg, #3379c8, #225ca5); box-shadow: inset 0 1px 0 #ffffff70, 0 4px 13px rgb(35 91 161 / .2); }
+[data-room-theme="glass"] .pill-button.primary { color: #fff; border-color: #5d91e2; background: linear-gradient(145deg, #2773f0, #1553c4); box-shadow: inset 0 1px 0 #ffffff66, 0 6px 16px -4px rgb(29 100 224 / .28); }
 [data-room-theme="glass"] .pill-button.primary[data-liquid-surface]::before { content: none; }
-[data-room-theme="glass"] .pill-button.primary:hover { background: linear-gradient(145deg, #2c70bf, #1d5298); }
-[data-room-theme="glass"] .hero h1 { color: #2c3139; font-weight: 450; letter-spacing: -.035em; }
-[data-room-theme="glass"] .hero h1 em { color: #687585; }
+[data-room-theme="glass"] .pill-button.primary:hover { background: linear-gradient(145deg, #2166d9, #1348ae); }
+[data-room-theme="glass"] :is(.desk-resume, .desk-stats, .desk-card, .desk-empty, .desk-scan, .book-grid .book-slot, .room-context, .tool-group, #table-selection, .library-table) {
+  border-color: rgb(255 255 255 / .9);
+  background: rgb(255 255 255 / .66);
+  box-shadow: var(--glass-edge), var(--glass-shadow);
+}
+[data-room-theme="glass"] .tool-group { border-radius: 999px; }
+[data-room-theme="glass"] .tool-group .shelf-control select { border-radius: 999px; }
+[data-room-theme="glass"] .tool-group .pill-button { border: 0; border-radius: 999px; background: transparent; box-shadow: none; }
+[data-room-theme="glass"] .tool-group .pill-button:hover { background: rgb(255 255 255 / .76); }
+[data-room-theme="glass"] .desk-tag-pill { border-color: rgb(255 255 255 / .88); background: rgb(255 255 255 / .62); box-shadow: var(--glass-edge), var(--glass-shadow); }
+[data-room-theme="glass"] .library-table thead { background: rgb(242 246 253 / .78); }
 [data-room-theme="glass"] .eyebrow { color: #647180; letter-spacing: 1.7px; }
-[data-room-theme="glass"] .room-card { color: #707985; }
 [data-room-theme="glass"] .toolbar { border: 0; padding-block: 8px; }
 [data-room-theme="glass"] .filters { padding: 4px; gap: 2px; }
 [data-room-theme="glass"] .filter { min-height: 32px; padding: 6px 13px; border-radius: 999px; }
-[data-room-theme="glass"] .filter.active { color: #285d9a; background: #ffffffb8; box-shadow: inset 0 1px 0 #fff, 0 2px 6px #2c3c5520; }
+[data-room-theme="glass"] .filter.active { color: #1651b4; background: #ffffffd6; box-shadow: inset 0 1px 0 #fff, 0 2px 6px #2c3c5520; }
 [data-room-theme="glass"] .view-toggle { padding: 4px; }
 [data-room-theme="glass"] .view-toggle button { border-radius: 50%; }
 [data-room-theme="glass"] .view-toggle button.active { color: var(--green); background: #ffffffc7; box-shadow: inset 0 1px 0 #fff, 0 2px 6px #2c3c5520; }
@@ -194,10 +242,10 @@
 [data-room-theme="glass"] .reading-options { border-color: #ffffffd9; border-radius: 20px; background: #ffffff42; box-shadow: var(--glass-edge); }
 [data-room-theme="glass"] .option-switch { border-color: rgb(92 105 125 / .13); background: #dadfe7b8; box-shadow: inset 0 1px 3px #47546a14; }
 [data-room-theme="glass"] .option-switch::after { background: #fff; }
-[data-room-theme="glass"] .reading-option input:checked + .option-switch { background: #3478c5; }
-[data-room-theme="glass"] .tag-filter[aria-pressed="true"] { border-color: #b0c7e1; background: #e7eef8b8; color: #245b9a; }
-[data-room-theme="glass"] .favorites-filter[aria-pressed="true"] { border-color: #8fafcf; background: #e3edf8b8; }
-[data-room-theme="glass"] .tag { border-color: rgb(81 118 158 / .13); border-radius: 9px; background: rgb(236 241 248 / .75); }
+[data-room-theme="glass"] .reading-option input:checked + .option-switch { background: #1d64e0; }
+[data-room-theme="glass"] .tag-filter[aria-pressed="true"] { border-color: #a9c6ee; background: #e3eefcb8; color: #1651b4; }
+[data-room-theme="glass"] .favorites-filter[aria-pressed="true"] { border-color: rgb(225 29 72 / .36); background: rgb(255 228 235 / .72); color: #be123c; }
+[data-room-theme="glass"] .tag { border-color: rgb(72 112 168 / .14); border-radius: 999px; background: rgb(232 241 253 / .78); }
 [data-room-theme="glass"] .theme-card { border-color: #ffffffeb; border-radius: 18px; background: #ffffff54; box-shadow: var(--glass-edge), 0 3px 10px #303b4e08; }
 [data-room-theme="glass"] .theme-card:hover { border-color: #a8bacf; background: #ffffffa6; }
 [data-room-theme="glass"] .theme-card[aria-pressed="true"] { border-color: #6e99ca; background: #ffffffab; box-shadow: 0 0 0 1px #6e99ca, 0 4px 15px #32639915; }
@@ -268,7 +316,7 @@
   [data-room-theme="glass"] [data-liquid-surface="lens"]::before { content: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
   [data-room-theme="glass"] .drawer > .drawer-top { background: #f9fafc; -webkit-backdrop-filter: none; backdrop-filter: none; }
   [data-room-theme="glass"] .nav-btn.active { background: #e6edf7; }
-  [data-room-theme="glass"] .pill-button.primary { background: #2469b5; }
+  [data-room-theme="glass"] .pill-button.primary { background: #1d64e0; }
 }
 @media (forced-colors: active) {
   [data-room-theme="glass"] [data-liquid-surface] { background: Canvas; border: 1px solid CanvasText; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }

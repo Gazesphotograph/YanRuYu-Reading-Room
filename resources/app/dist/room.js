@@ -1,7 +1,7 @@
 import { THEMES, resolveTheme, paintTheme, themeCards, saveThemePreference } from './room-themes.js';
 import { bindBookTitles } from './room-book-titles.js';
 import { initLiquidGlass } from './room-glass.js';
-import { shellMarkup } from './room-shell.js';
+import { shellMarkup, glyph } from './room-shell.js';
 import { LibraryIndex, bookTags, tagKey, tagGroups, readingStatus, readingTime } from './room-library.js';
 import { normalizeLibraryState, normalizeSmartShelves, normalizeShelfQuery, shelfMatches, booksPerPage, describeTag } from './room-shelves.js';
 import { normalizeQuality } from './room-quality.js';
@@ -49,13 +49,13 @@ function startupWorkspace() {
   const saved = storage.get('workspace-start-page', 'desk');
   return ['library', 'room'].includes(saved) ? saved : 'desk';
 }
-let workspace = null;
+let workspace;
 let libraryView = storage.get('workspace-library-view', 'grid') === 'table' ? 'table' : 'grid';
 const checkedBooks = new Set();
 let libraryPosition = { page: state.page, scrollTop: state.scrollTop, selectedId: '' };
 let roomQuery = null;
 let selectedId = '';
-if (storage.get('workspace-preview', false) === true) enterWorkspace(startupWorkspace());
+enterWorkspace(startupWorkspace());
 const preferredReadingMode=storage.get('reading-mode',null);
 state.readingMode = ['paged','double','continuous'].includes(preferredReadingMode)?preferredReadingMode
   : ({single:'paged',double:'double',scroll:'continuous'})[localStorage.getItem('imageStyleType')] || 'paged';
@@ -186,17 +186,17 @@ let restoringLibraryPosition = true;
 let positionTimer;
 function saveLibraryPosition() {
   if (!restoringLibraryPosition) {
-    if (!workspace || workspace === 'library') state.scrollTop = $('.content')?.scrollTop || 0;
+    if (workspace === 'library') state.scrollTop = $('.content')?.scrollTop || 0;
     state.tagScrollTop = $('#tag-list')?.scrollTop || 0;
   }
-  const position = workspace && workspace !== 'library' ? libraryPosition : state;
-  const view = workspace ? 'grid' : state.view;
-  storage.set('library-state', normalizeLibraryState({ ...state, view, page: position.page, scrollTop: position.scrollTop }));
+  const position = workspace !== 'library' ? libraryPosition : state;
+  // Backups use the grid/shelf schema; the table preference has its own key.
+  storage.set('library-state', normalizeLibraryState({ ...state, view: 'grid', page: position.page, scrollTop: position.scrollTop }));
 }
 function restoreLibraryPosition() {
   if (!restoringLibraryPosition) return;
   requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (!workspace || workspace === 'library') $('.content')?.scrollTo(0, state.scrollTop);
+    if (workspace === 'library') $('.content')?.scrollTo(0, state.scrollTop);
     if ($('#tag-list')) $('#tag-list').scrollTop = state.tagScrollTop;
     restoringLibraryPosition = false;
   }));
@@ -205,9 +205,13 @@ function renderLibraryControls() {
   const filterButton = $('[data-action="catalog-filter"]');
   const active = state.folder || state.classicQuery;
   filterButton.hidden = workspace !== 'library' && !active;
-  filterButton.textContent = active ? [state.folder || '全部目录', state.classicQuery].filter(Boolean).join(' · ') : '目录与组合筛选';
-  filterButton.title = filterButton.textContent;
-  filterButton.setAttribute('aria-label', active ? '目录与组合筛选，' + filterButton.textContent : '目录与组合筛选');
+  const label = active ? [state.folder || '全部目录', state.classicQuery].filter(Boolean).join(' · ') : '目录与组合筛选';
+  const textNode = filterButton.querySelector('span');
+  if (textNode) textNode.textContent = label;
+  else filterButton.textContent = label;
+  filterButton.dataset.active = String(!!active);
+  filterButton.title = label;
+  filterButton.setAttribute('aria-label', active ? '目录与组合筛选，' + label : '目录与组合筛选');
   if (!shelfMatches(state.smartShelves.find(shelf=>shelf.id===state.shelfId),state)) state.shelfId='';
   $('#smart-shelf').innerHTML='<option value="">当前筛选</option>'+state.smartShelves.map(shelf=>`<option value="${esc(shelf.id)}">${esc(shelf.name)}</option>`).join('');
   $('#smart-shelf').value=state.shelfId;
@@ -367,7 +371,7 @@ async function renderSpatialBooks(books, capacity) {
   if (request !== sceneRequest) return;
   const mounting = !spatialRoom;
   if (mounting) {
-    spatialRoom = new RoomScene(viewport, { quality: state.quality, embedded: workspace === 'room' });
+    spatialRoom = new RoomScene(viewport, { quality: state.quality, embedded: true });
     spatialRoom.setSuspended(!!state.reader || !!$('#modal-root').children.length || !!document.querySelector('dialog[open]'));
   }
   spatialRoom.setBooks(books.map(book => ({
@@ -393,22 +397,10 @@ function focusBook(id, reveal = false) {
   (target || (workspace === 'room' ? $('button[data-workspace="room"]') : $('[data-filter].active')))?.focus({preventScroll:true});
 }
 function updateWorkspaceChrome() {
-  $('.shell').dataset.workspace = workspace || '';
-  $('.workspace-nav').hidden = !workspace;
+  $('.shell').dataset.workspace = workspace;
   $('#reading-desk').hidden = workspace !== 'desk';
   $('#catalog-workspace').hidden = workspace === 'desk';
   $('.room-context').hidden = workspace !== 'room';
-  const arrange = $('[data-action="personalization"]');
-  const inRoom = workspace === 'room';
-  const host = inRoom ? $('.room-context') : $('.sidebar');
-  if (arrange.parentElement !== host) {
-    host.insertBefore(arrange, inRoom ? $('#room-selection') : $('.sidebar [data-action="library"]'));
-    arrange.className = inRoom ? 'pill-button' : 'nav-btn';
-    arrange.querySelector('span').textContent = inRoom ? '布置阅览室' : '私人阅览室';
-  }
-  arrange.hidden = !!workspace && !inRoom;
-  $('[data-view="shelf"]').hidden = !!workspace;
-  $('[data-view="table"]').hidden = workspace !== 'library';
   for (const button of document.querySelectorAll('button[data-workspace]')) {
     if (button.dataset.workspace === workspace) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
@@ -429,7 +421,7 @@ function enterWorkspace(next, bookId = '') {
   }
 }
 function setWorkspace(next, bookId = '') {
-  if (!workspace || next === workspace) return;
+  if (!['desk','library','room'].includes(next) || next === workspace) return;
   if (workspace === 'library') {
     libraryPosition = { page: state.page, scrollTop: $('.content').scrollTop, selectedId };
   }
@@ -473,7 +465,7 @@ function showFilteredBook(id) {
 function updateSelection() {
   if (spatialRoom && workspace === 'room') spatialRoom.selectedBook = selectedId;
   for (const button of document.querySelectorAll('#room [data-book]')) {
-    button.toggleAttribute('data-selected', !!workspace && button.dataset.book === selectedId);
+    button.toggleAttribute('data-selected', button.dataset.book === selectedId);
   }
   if (workspace !== 'room') return;
   const scope = normalizeShelfQuery(scopedLibraryState());
@@ -494,13 +486,13 @@ function renderShell() {
   $('#sort').value=state.sort;
   $('#search').value=state.search;$('#tag-search').value=state.tagSearch;
   $('#search').addEventListener('input',e=>{
-    if(workspace && workspace!=='library')setWorkspace('library');
+    if(workspace!=='library')setWorkspace('library');
     $('#filtered-book-notice').hidden=true;
     state.search=e.target.value;state.page=1;clearTimeout(searchTimer);searchTimer=setTimeout(renderBooks,110);
   });
   $('#search-scope').value=state.searchMode;
   $('#search-scope').onchange=e=>{
-    if(workspace&&workspace!=='library')setWorkspace('library');
+    if(workspace!=='library')setWorkspace('library');
     state.searchMode=e.target.value;state.page=1;renderBooks();
   };
   $('#sort').addEventListener('change',e=>{state.sort=e.target.value;storage.set('sort',state.sort);state.page=1;renderBooks();});
@@ -552,28 +544,60 @@ function tagBrowser() {
 }
 function renderDesk() {
   const available = libraryIndex.books.filter(book => book.exist !== false);
-  const recentRead = available.reduce((latest, book) => {
-    const time = readingTime(book, state.progress, state.visits);
-    return time && (!latest || time > readingTime(latest, state.progress, state.visits)) ? book : latest;
-  }, null);
+  const recentRead = latestReadBook(available);
   const recentPosition = recentRead && state.progress[recentRead.id];
   const recent = libraryIndex.ordered('recent').filter(book => book.exist !== false && book !== recentRead).slice(0, 8);
   const featured = personalization.getFeaturedBooks(available).slice(0, 8);
+  const statuses = { reading: 0, finished: 0, unread: 0 };
+  let favoriteTotal = 0;
+  for (const book of available) { statuses[readingStatus(book, state.progress, state.visits)]++; if (book.mark) favoriteTotal++; }
+  const continuing = available.filter(book => book !== recentRead && readingStatus(book, state.progress, state.visits) === 'reading')
+    .sort((a, b) => readingTime(b, state.progress, state.visits) - readingTime(a, state.progress, state.visits)).slice(0, 8);
+  const topTags = libraryIndex.rankedTags.slice(0, 10);
+  const heroTags = recentRead ? tagsOf(recentRead).slice(0, 4) : [];
   const scan = window.YanruyuTasks.tasks.find(task => ['scan','rebuild'].includes(task.kind) && ['queued','running','cancelling'].includes(task.status));
   const cover = book => book.coverPath ? `<img src="${esc(fileURL(book.coverPath))}" alt="" draggable="false">` : `<span>${esc(title(book))}</span>`;
+  const percent = position => position?.total ? Math.round(Math.min(1, position.page / position.total) * 100) : 0;
+  const card = (book, extra = '') => {
+    const position = state.progress[book.id];
+    return `<button class="desk-card" data-read="${esc(book.id)}"${extra} aria-label="阅读 ${esc(title(book))}"><span class="desk-cover">${cover(book)}${position ? `<i class="desk-cover-progress" style="--progress:${percent(position)}%"></i>` : ''}<span class="desk-cover-play">${glyph('play')}</span></span><span class="desk-card-title">${esc(title(book))}</span><small>${esc(bookSubtitle(book))}</small></button>`;
+  };
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? '夜深了，还在读吗' : hour < 11 ? '早上好' : hour < 13 ? '中午好' : hour < 18 ? '下午好' : hour < 23 ? '晚上好' : '夜深了，还在读吗';
+  const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  const totalCount = Math.max(1, available.length);
+  const stats = [
+    ['all', 'books', 'primary', '藏书', available.length, '全部藏书', 100],
+    ['reading', 'reading', 'cyan', '阅读中', statuses.reading, '读到一半', Math.round((statuses.reading / totalCount) * 100)],
+    ['finished', 'finished', 'emerald', '已读完', statuses.finished, '翻到最后一页', Math.round((statuses.finished / totalCount) * 100)],
+    ['favorites', 'heart', 'rose', '收藏', favoriteTotal, '心头好', Math.round((favoriteTotal / totalCount) * 100)],
+  ];
   const desk = $('#reading-desk');
   const focus = desk.contains(document.activeElement) ? document.activeElement : null;
-  const markup = `<div class="desk-section-heading"><h1>书桌</h1><button class="pill-button" data-action="reading-history">阅读记录</button></div>
-    ${recentRead ? `<article class="desk-resume"><div class="desk-cover">${cover(recentRead)}</div><div>
-      <h2>${esc(title(recentRead))}</h2><p>${recentPosition?`第 ${recentPosition.page} / ${recentPosition.total} 页`:'最近打开 · 未记录页码'}</p>
-      <button class="pill-button primary" data-desk-resume data-read="${esc(recentRead.id)}">${recentPosition?'继续阅读':'打开阅读'}</button></div></article>` : ''}
+  const markup = `<header class="desk-greeting"><div><p class="desk-kicker">书桌 · ${esc(today)}</p><h1>${greeting}${available.length ? `<span>，${statuses.reading ? `有 ${statuses.reading} 本书在等你读完` : '挑一本书开始吧'}</span>` : ''}</h1></div><div class="desk-greeting-actions">${available.length ? `<button class="pill-button desk-random" data-action="random-book">${glyph('dice')}<span>随机挑一本</span></button>` : ''}<button class="pill-button" data-action="reading-history">${glyph('history')}<span>阅读记录</span></button></div></header>
+    ${recentRead ? `<article class="desk-resume" style="--progress:${percent(recentPosition)}%">
+      <div class="desk-resume-backdrop" aria-hidden="true">${recentRead.coverPath ? `<img src="${esc(fileURL(recentRead.coverPath))}" alt="" draggable="false">` : ''}</div>
+      <div class="desk-cover">${cover(recentRead)}${recentPosition ? `<span class="desk-cover-badge" aria-hidden="true">${percent(recentPosition)}%</span>` : ''}</div><div class="desk-resume-body">
+      <p class="desk-eyebrow"><span class="desk-live"></span>继续阅读 · ${esc(relativeTime(readingTime(recentRead, state.progress, state.visits), '打开'))}</p>
+      <h2>${esc(title(recentRead))}</h2><p class="desk-resume-meta">${recentPosition?`第 ${recentPosition.page} / ${recentPosition.total} 页 · 已读 ${percent(recentPosition)}%`:'最近打开 · 未记录页码'}</p>
+      ${recentPosition ? `<div class="desk-progress" role="progressbar" aria-label="阅读进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent(recentPosition)}"><span></span></div>` : ''}
+      ${heroTags.length ? `<div class="desk-hero-tags">${heroTags.map(tag => `<button class="desk-tag-chip" data-desk-tag="${esc(tag.key || tagKey(tag.group, tag.value))}">${esc(tag.value)}</button>`).join('')}</div>` : ''}
+      <div class="desk-resume-actions"><button class="pill-button primary desk-play" data-desk-resume data-read="${esc(recentRead.id)}">${glyph('play')}<span>${recentPosition?'继续阅读':'打开阅读'}</span></button>
+      ${recentPosition ? `<button class="pill-button desk-ghost" data-desk-restart="${esc(recentRead.id)}">${glyph('restart')}<span>从头开始</span></button>` : ''}
+      <button class="pill-button desk-ghost" data-desk-details="${esc(recentRead.id)}">${glyph('info')}<span>书籍详情</span></button></div></div></article>` : ''}
+    ${available.length ? `<div class="desk-stats" role="group" aria-label="书库概览">${stats.map(([filter, name, tone, label, count, hint, ratio]) =>
+      `<button class="desk-stat" data-desk-filter="${filter}" data-tone="${tone}" style="--ratio:${count ? Math.max(8, ratio) : 0}%" aria-label="在书库查看${label} ${count} 本"><div class="desk-stat-top"><span class="desk-stat-ico">${glyph(name)}</span><span class="desk-stat-label">${label}</span></div><div class="desk-stat-val"><strong>${count}</strong><small>${hint}</small></div><i class="desk-stat-bar" aria-hidden="true"></i></button>`).join('')}</div>` : ''}
+    ${topTags.length ? `<div class="desk-tags" role="group" aria-label="热门标签"><span class="desk-tags-label">探索标签</span>${topTags.map(tag =>
+      `<button class="desk-tag-pill" data-desk-tag="${esc(tag.key)}"><span>${esc(tag.value)}</span><small>${tag.count}</small></button>`).join('')}</div>` : ''}
     ${scan ? `<div class="desk-scan"><p role="status">正在扫描书库${scan.total?` · ${scan.current} / ${scan.total}`:''}</p>
       <progress max="1" ${Number.isFinite(scan.progress)?`value="${Math.max(0,Math.min(1,scan.progress))}"`:''} aria-label="扫描书库进度"></progress>
       <button class="pill-button" data-action="tasks">查看任务</button></div>` : ''}
-    ${recent.length ? `<section aria-labelledby="desk-recent"><h2 id="desk-recent">最近加入</h2><div class="desk-recent">
-      ${recent.map(book => `<button data-desk-book data-read="${esc(book.id)}" aria-label="阅读 ${esc(title(book))}"><span class="desk-cover">${cover(book)}</span><span>${esc(title(book))}</span></button>`).join('')}</div></section>` : ''}
-    ${featured.length ? `<section aria-labelledby="desk-featured"><div class="desk-section-heading"><h2 id="desk-featured">我的精选</h2><button class="pill-button" data-action="desk-featured">在阅览室看</button></div><div class="desk-recent">
-      ${featured.map(book => `<button data-read="${esc(book.id)}" aria-label="阅读 ${esc(title(book))}"><span class="desk-cover">${cover(book)}</span><span>${esc(title(book))}</span></button>`).join('')}</div></section>` : ''}
+    ${continuing.length ? `<section class="desk-rail" data-tone="cyan" aria-labelledby="desk-continue"><div class="desk-section-heading"><div class="desk-section-title"><i class="section-pip" aria-hidden="true"></i><h2 id="desk-continue">还没读完</h2><span class="desk-section-count">${statuses.reading}</span></div><button class="pill-button desk-link" data-desk-filter="reading">全部 ${statuses.reading} 本</button></div><div class="desk-recent">
+      ${continuing.map(book => card(book)).join('')}</div></section>` : ''}
+    ${recent.length ? `<section class="desk-rail" data-tone="primary" aria-labelledby="desk-recent"><div class="desk-section-heading"><div class="desk-section-title"><i class="section-pip" aria-hidden="true"></i><h2 id="desk-recent">最近加入</h2><span class="desk-section-count">${recent.length}</span></div><button class="pill-button desk-link" data-desk-filter="all">打开书库</button></div><div class="desk-recent">
+      ${recent.map(book => card(book, ' data-desk-book')).join('')}</div></section>` : ''}
+    ${featured.length ? `<section class="desk-rail" data-tone="amber" aria-labelledby="desk-featured"><div class="desk-section-heading"><div class="desk-section-title"><i class="section-pip" aria-hidden="true"></i><h2 id="desk-featured">我的精选</h2><span class="desk-section-count">${featured.length}</span></div><button class="pill-button desk-link" data-action="desk-featured">在阅览室看</button></div><div class="desk-recent">
+      ${featured.map(book => card(book)).join('')}</div></section>` : ''}
     ${!available.length && !scan ? `<div class="desk-empty"><h2>${state.books.length?'暂无可读书籍':'添加本地书库'}</h2>
       <p>选择存放漫画文件夹或压缩包的目录。</p><button class="pill-button primary" data-action="library">选择书库文件夹</button>
       ${state.setting.library ? '<button class="pill-button" data-action="scan">扫描现有书库</button>' : ''}</div>` : ''}`;
@@ -586,17 +610,71 @@ function renderDesk() {
     replacement?.focus({ preventScroll: true });
   }
 }
+function latestReadBook(books) {
+  return books.reduce((latest, book) => {
+    const time = readingTime(book, state.progress, state.visits);
+    return time && (!latest || time > readingTime(latest, state.progress, state.visits)) ? book : latest;
+  }, null);
+}
+function relativeTime(time, verb) {
+  if (!Number.isFinite(time) || time <= 0) return '时间未知';
+  const minutes = Math.max(0, Math.round((Date.now() - time) / 60000));
+  if (minutes < 1) return '刚刚' + verb;
+  if (minutes < 60) return `${minutes} 分钟前${verb}`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} 小时前${verb}`;
+  if (minutes < 10080) return `${Math.round(minutes / 1440)} 天前${verb}`;
+  return new Date(time).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }) + verb;
+}
+let nowReadingSignature = '';
+function renderNowReading() {
+  const host = $('#now-reading');
+  if (!host) return;
+  const book = latestReadBook(libraryIndex.books.filter(item => item.exist !== false));
+  const position = book && state.progress[book.id];
+  const percent = position?.total ? Math.round(Math.min(1, position.page / position.total) * 100) : 0;
+  const markup = book ? `<button class="now-reading-card" data-now-reading="${esc(book.id)}" aria-label="继续阅读 ${esc(title(book))}" style="--progress:${percent}%">
+    <span class="now-reading-cover">${book.coverPath ? `<img src="${esc(fileURL(book.coverPath))}" alt="" draggable="false">` : ''}</span>
+    <span class="now-reading-text"><small>${position ? `正在读 · ${percent}%` : '最近打开'}</small><strong>${esc(title(book))}</strong><i class="now-reading-bar"></i></span>
+    <span class="now-reading-play">${glyph('play')}</span></button>` : '';
+  host.hidden = !book;
+  if (markup === nowReadingSignature) return;
+  host.innerHTML = markup;
+  nowReadingSignature = markup;
+}
+function openDeskFilter(filter) {
+  setWorkspace('library');
+  state.favorites = filter === 'favorites';
+  state.filter = filter === 'favorites' ? 'all' : filter;
+  state.featured = false;
+  state.page = 1;
+  renderBooks();
+  $('[data-filter].active')?.focus({ preventScroll: true });
+}
+function openDeskTag(key) {
+  setWorkspace('library');
+  state.filter = 'all';
+  state.favorites = false;
+  state.featured = false;
+  state.excludedTags = state.excludedTags.filter(item => item !== key);
+  state.selectedTags = [key];
+  state.page = 1;
+  renderBooks();
+}
 function renderTable(books) {
   const rows = books.map(book => {
     const authors = esc(libraryIndex.metadata.get(book.id).authors.join('、') || '—');
     const source = book.exist === false ? '失联' : '可访问';
+    const status = readingStatus(book, state.progress, state.visits);
+    const pos = readingPosition(book);
+    const thumb = book.coverPath ? `<img src="${esc(fileURL(book.coverPath))}" alt="" loading="lazy" draggable="false">` : `<span>${esc(title(book).slice(0, 1))}</span>`;
     const match=state.searchMode!=='metadata'&&state.search.trim()?workspaceText.matches.find(result=>result.bookId===book.id):null;
     return `<tr><th scope="row"><div class="table-book">
       <label class="table-check"><input type="checkbox" data-check-book="${esc(book.id)}" aria-label="选择 ${esc(title(book))}"></label>
+      <span class="table-thumb" aria-hidden="true">${thumb}</span>
       <div class="table-title"><button data-book="${esc(book.id)}">${esc(title(book))}</button><span class="table-compact">${authors}</span>${match?.page?`<button class="table-page-match" data-match-book="${esc(book.id)}" data-match-page="${match.page}">文本命中 · 第 ${match.page} 页</button>`:''}</div>
     </div></th><td class="table-wide">${authors}</td>
-    <td>${names[readingStatus(book,state.progress,state.visits)]} ${esc(readingPosition(book))}<span class="table-compact">${source}</span></td>
-    <td class="table-wide">${source}</td></tr>`;
+    <td><span class="status-pill" data-status="${status}">${names[status]}${pos ? ' ' + esc(pos) : ''}</span><span class="table-compact">${source}</span></td>
+    <td class="table-wide"><span class="source-pill" data-source="${book.exist === false ? 'missing' : 'ok'}">${source}</span></td></tr>`;
   }).join('');
   const markup = `<table class="library-table" aria-label="书库结果"><thead><tr>
     <th scope="col"><label><input type="checkbox" data-check-page aria-label="选择本页全部书籍"> 书名<span class="table-compact">与作者</span></label></th>
@@ -655,6 +733,7 @@ document.addEventListener('change', event => {
 function renderBooks() {
   clearTimeout(searchTimer);
   updateWorkspaceChrome();
+  renderNowReading();
   if (workspace === 'desk') {
     disposeRoom();
     disposeGridTitles?.();
@@ -698,7 +777,7 @@ function renderBooks() {
     const signature=JSON.stringify(slice.map(b=>[b.id,b.coverPath,b.mark,bookSubtitle(b),title(b)]));
     if(signature!==gridSignature||!$('.book-grid')){
       disposeGridTitles?.();
-      $('#room').innerHTML=`<div class="book-grid">${slice.map(b=>`<div class="book-slot">${bookMarkup(b)}<span class="book-label">${esc(title(b))}</span><span class="book-subtitle">${esc(bookSubtitle(b))}</span></div>`).join('')}</div>`;
+      $('#room').innerHTML=`<div class="book-grid">${slice.map(b=>`<div class="book-slot" data-status="${readingStatus(b,state.progress,state.visits)}">${bookMarkup(b)}<span class="book-label">${esc(title(b))}</span><span class="book-subtitle">${esc(bookSubtitle(b))}</span></div>`).join('')}</div>`;
       gridSignature=signature;disposeGridTitles = bindBookTitles($('.book-grid'));
     }
   } else if (state.view==='table') {
@@ -715,9 +794,8 @@ function renderBooks() {
   $('#count-favorites').textContent=favoriteCount;
   for(const key of Object.keys(counts))$('#count-'+key).textContent=counts[key];
   $('#local-count').textContent=`${all.length} 本藏书 · 只属于你`;
-  $('#hero-note').textContent=`${all.length} 本故事静候翻阅，在自己的节奏里，翻开下一页。`;
   $('#filter-count').textContent=Object.values(counts).reduce((sum,count)=>sum+count,0);
-  const label=(state.featured?'精选 · ':'')+(state.favorites?'收藏 · ':'')+names[state.filter];$('#breadcrumb').textContent=label;
+  const label=(state.featured?'精选 · ':'')+(state.favorites?'收藏 · ':'')+names[state.filter];
   $('#shelf-title').textContent=state.search||state.folder||state.classicQuery||state.selectedTags.length||state.excludedTags.length||state.collectionId?`筛选结果 / ${books.length} 本`:`${label} / COLLECTION ${String(state.page).padStart(2,'0')}`;
   $('#results').textContent=books.length?`展示 ${(state.page-1)*state.perPage+1}–${Math.min(state.page*state.perPage,books.length)} 本 · 共 ${books.length} 本`:'0 本藏书';
   $('#pagination').textContent=`${String(state.page).padStart(2,'0')} / ${String(pages).padStart(2,'0')}`;
@@ -734,7 +812,7 @@ let lastFocus,lastFocusBook;
 function showModal(html, drawer=false) {
   if(!$('#modal-root').children.length){lastFocus=document.activeElement;lastFocusBook=lastFocus?.dataset.book||lastFocus?.dataset.showFilteredBook;}
   $('#modal-root').innerHTML=`<div class="overlay" data-overlay="true"><section class="${drawer?'drawer':'modal'}" role="dialog" aria-modal="true" aria-label="${drawer?'书籍详情':'阅览室设置'}">${html}</section></div>`;
-  if (drawer && workspace) $('#modal-root .drawer').classList.add('workspace-detail');
+  if (drawer) $('#modal-root .drawer').classList.add('workspace-detail');
   const modal=$('#modal-root .modal');
   if(modal){
     const top=modal.querySelector(':scope > .drawer-top');
@@ -814,20 +892,18 @@ async function chooseReaderProgram() {
 }
 function details(id) {
   const b=state.books.find(b=>b.id===id); if(!b)return;
-  if (workspace && $('#room').querySelector(`[data-book="${CSS.escape(id)}"]`)) {
+  if ($('#room').querySelector(`[data-book="${CSS.escape(id)}"]`)) {
     selectedId=id;
     updateSelection();
   }
   const p=state.progress[id], tags=tagsOf(b);
-  showModal(`<div class="drawer-top">${workspace ? '书籍详情' : 'ON YOUR SHELF'} <button class="icon-btn" data-action="dismiss" aria-label="关闭详情">${icon('close')}</button></div><div class="detail-overview"><div class="detail-art">${bookMarkup(b,true)}</div><div class="detail-description"><div class="eyebrow">${esc(b.category || (workspace ? '' : 'PRIVATE COLLECTION'))}</div><h2>${esc(title(b))}</h2><div class="detail-meta"><span>${pageCount(b)||'—'} 页</span><span>${b.bundleSize?(b.bundleSize/1048576).toFixed(1)+' MB':'本地藏书'}</span><span>${b.rating?'★ '+Number(b.rating).toFixed(1):'未评分'}</span></div></div></div><div class="detail-actions"><button class="pill-button primary" data-read="${esc(id)}">${icon('book')}${p?'继续阅读 · 第 '+p.page+' 页':'翻开这本书'}</button><button class="pill-button" data-favorite="${esc(id)}" aria-pressed="${!!b.mark}" title="${b.mark?'取消收藏':'加入收藏'}">${icon('heart')}${b.mark?'已收藏':'收藏'}</button></div>${p?`<div class="detail-section"><h3>上次读到 ${p.page} / ${p.total} 页 <span style="float:right">${percent(b)}%</span></h3><div class="progress-track"><div style="width:${percent(b)}%"></div></div><button class="pill-button" data-read-start="${esc(id)}">从第一页重读</button></div>`:''}<div class="detail-section"><h3>关于这本书</h3><div class="tags">${tags.length?tags.slice(0,40).map(t=>`<button class="tag" data-tag-key="${esc(t.key || tagKey(t.group,t.value))}">${esc(t.value)}${t.inferred?' · 文件名识别':''}</button>`).join(''):'<span class="path">尚无标签，可以拉取元数据或手动编辑。</span>'}</div></div><div class="detail-section"><h3>书籍位置</h3><div class="path">${esc(b.filepath)}</div><button class="pill-button" data-reveal="${esc(id)}">${icon('folder')}在文件夹中显示</button></div>`,true);
+  showModal(`<div class="drawer-top">书籍详情 <button class="icon-btn" data-action="dismiss" aria-label="关闭详情">${icon('close')}</button></div><div class="detail-overview"><div class="detail-art">${b.coverPath?`<div class="detail-art-backdrop" aria-hidden="true"><img src="${esc(fileURL(b.coverPath))}" alt="" draggable="false"></div>`:''}${bookMarkup(b,true)}</div><div class="detail-description"><div class="eyebrow">${esc(b.category || '')}</div><h2>${esc(title(b))}</h2><div class="detail-meta"><span>${pageCount(b)||'—'} 页</span><span>${b.bundleSize?(b.bundleSize/1048576).toFixed(1)+' MB':'本地藏书'}</span><span>${b.rating?'★ '+Number(b.rating).toFixed(1):'未评分'}</span></div></div></div><div class="detail-actions"><button class="pill-button primary" data-read="${esc(id)}">${icon('book')}${p?'继续阅读 · 第 '+p.page+' 页':'翻开这本书'}</button><button class="pill-button" data-favorite="${esc(id)}" aria-pressed="${!!b.mark}" title="${b.mark?'取消收藏':'加入收藏'}">${icon('heart')}${b.mark?'已收藏':'收藏'}</button></div>${p?`<div class="detail-section"><h3>上次读到 ${p.page} / ${p.total} 页 <span style="float:right">${percent(b)}%</span></h3><div class="progress-track"><div style="width:${percent(b)}%"></div></div><button class="pill-button" data-read-start="${esc(id)}">从第一页重读</button></div>`:''}<div class="detail-section"><h3>关于这本书</h3><div class="tags">${tags.length?tags.slice(0,40).map(t=>`<button class="tag" data-tag-key="${esc(t.key || tagKey(t.group,t.value))}">${esc(t.value)}${t.inferred?' · 文件名识别':''}</button>`).join(''):'<span class="path">尚无标签，可以拉取元数据或手动编辑。</span>'}</div></div><div class="detail-section"><h3>书籍位置</h3><div class="path">${esc(b.filepath)}</div><button class="pill-button" data-reveal="${esc(id)}">${icon('folder')}在文件夹中显示</button></div>`,true);
   $('.detail-actions').insertAdjacentHTML('afterend', readingOptionsMarkup());
-  if (workspace) {
-    const inScope=visibleBooks().some(book=>book.id===id);
-    $('.detail-actions').insertAdjacentHTML('beforeend', `
-      ${workspace === 'library' && inScope ? `<button class="pill-button" data-in-room="${esc(id)}">在阅览室看</button>` : ''}
-      ${workspace === 'room' ? `<button class="pill-button" data-in-library="${esc(id)}">在书库显示</button>` : ''}
-      <button class="pill-button" data-edit-book="${esc(id)}">编辑书名和作者</button>`);
-  }
+  const inScope=visibleBooks().some(book=>book.id===id);
+  $('.detail-actions').insertAdjacentHTML('beforeend', `
+    ${workspace === 'library' && inScope ? `<button class="pill-button" data-in-room="${esc(id)}">在阅览室看</button>` : ''}
+    ${workspace === 'room' ? `<button class="pill-button" data-in-library="${esc(id)}">在书库显示</button>` : ''}
+    <button class="pill-button" data-edit-book="${esc(id)}">编辑书名和作者</button>`);
   $('.drawer').insertAdjacentHTML('beforeend',`<div class="detail-section"><h3>整理与发现</h3><div class="detail-actions"><button class="pill-button" data-organize-book="${esc(id)}">编辑作者与标签</button><button class="pill-button" data-discover-book="${esc(id)}">相似书籍</button><button class="pill-button" data-index-book="${esc(id)}">本书文本与识别</button><button class="pill-button" data-feature-book="${esc(id)}" aria-pressed="${personalization.isFeatured(id)}">${personalization.isFeatured(id)?'移出精选':'加入精选陈列'}</button></div></div>`);
   $('.drawer .tags').parentElement.insertAdjacentHTML('beforeend', `<div class="detail-actions"><button class="pill-button" data-metadata-book="${esc(id)}">拉取元数据</button><button class="pill-button" data-change-cover="${esc(id)}">选择封面图片</button>${b.url?`<button class="pill-button" data-book-source="${esc(id)}">打开元数据来源</button>`:''}</div>`);
   const textMatch=state.searchMode!=='metadata'&&state.search.trim()?workspaceText.matches.find(result=>result.bookId===id):null;
@@ -971,25 +1047,16 @@ function appearance() {
   $('.modal').classList.add('theme-modal');$('.modal').setAttribute('aria-label','外观主题');paintTheme(state.theme);
 }
 function settings() {
-  showModal(`<div class="drawer-top">MAKE YOURSELF AT HOME<button class="icon-btn" data-action="dismiss" aria-label="关闭设置">${icon('close')}</button></div><h2>让阅读，更合你的心意。</h2><div class="setting-row"><div>外观主题<small id="active-theme-name">${THEMES.find(t=>t.id===state.theme).name}</small></div><button class="pill-button" data-action="theme">${icon('palette')}选择主题</button></div><div class="setting-row"><div>书架视图<small>立体陈列或紧凑平铺</small></div><select id="setting-view" aria-label="书架视图"><option value="shelf">立体书架</option><option value="grid">平铺封面</option></select></div><div class="setting-row"><div>漫画文件夹<small>读取目录中的图片与漫画压缩包</small></div><button class="pill-button" data-action="library">更换</button></div><div class="path">${esc(state.setting.library||'尚未选择')}</div><div class="setting-row"><div>元数据来源<small>在线搜索、登录 Cookie 与代理</small></div><button class="pill-button" data-action="metadata-settings">来源设置</button></div>`);
-  $('#setting-view').value=state.view; $('#setting-view').onchange=e=>{state.view=e.target.value;storage.set('view',state.view);renderBooks();};
-  const viewSetting = $('#setting-view').closest('.setting-row');
-  viewSetting.hidden = !!workspace;
-  if (workspace) {
-    viewSetting.insertAdjacentHTML('afterend', `<div class="setting-row"><label for="workspace-start-page">启动页<small>下次打开 2.0 预览时显示</small></label>
-      <select id="workspace-start-page" aria-label="启动页"><option value="desk">书桌</option><option value="library">书库</option><option value="room">阅览室</option></select></div>`);
-    const startPage = $('#workspace-start-page');
-    startPage.value = startupWorkspace();
-    startPage.onchange = () => storage.set('workspace-start-page', startPage.value);
-  }
+  showModal(`<div class="drawer-top">MAKE YOURSELF AT HOME<button class="icon-btn" data-action="dismiss" aria-label="关闭设置">${icon('close')}</button></div><h2>让阅读，更合你的心意。</h2><div class="setting-row"><div>外观主题<small id="active-theme-name">${THEMES.find(t=>t.id===state.theme).name}</small></div><button class="pill-button" data-action="theme">${icon('palette')}选择主题</button></div><div class="setting-row"><label for="workspace-start-page">启动页</label><select id="workspace-start-page"><option value="desk">书桌</option><option value="library">书库</option><option value="room">阅览室</option></select></div><div class="setting-row"><div>漫画文件夹<small>读取目录中的图片与漫画压缩包</small></div><button class="pill-button" data-action="library">更换</button></div><div class="path">${esc(state.setting.library||'尚未选择')}</div><div class="setting-row"><div>元数据来源<small>在线搜索、登录 Cookie 与代理</small></div><button class="pill-button" data-action="metadata-settings">来源设置</button></div>`);
+  const startPage = $('#workspace-start-page');
+  startPage.value = startupWorkspace();
+  startPage.onchange = () => storage.set('workspace-start-page', startPage.value);
   $('#modal-root [data-action="library"]').closest('.setting-row').nextElementSibling.insertAdjacentHTML('afterend',
     '<div class="setting-row"><div>扫描排除规则</div><button class="pill-button" data-action="scan-exclusion">编辑规则</button></div>');
   $('#modal-root .modal-body').insertAdjacentHTML('beforeend', '<div class="setting-row"><div>系统与阅读设置<small>启动扫描、托盘、标题栏和页面操作</small></div><button class="pill-button" data-action="system-settings">打开设置</button></div><div class="setting-row"><div>书库导入<small>SQLite 元数据与旧版合集</small></div><button class="pill-button" data-action="library-import">导入数据</button></div>');
-  viewSetting.insertAdjacentHTML('afterend', `<div class="setting-row"><div>颜如玉 2.0 预览<small>试用书桌、书库表格和独立阅览室</small></div>
-    <button class="pill-button" data-action="workspace-preview">${workspace?'返回原界面':'启用 2.0 预览'}</button></div>`);
   const protection=document.createElement('div');protection.className='setting-row';
   protection.innerHTML='<div>数据保护<small>完整备份、恢复与压缩包删页恢复点</small></div><button class="pill-button" data-action="data-protection">备份与恢复</button>';
-  $('#setting-view').closest('.setting-row').after(protection);
+  startPage.closest('.setting-row').after(protection);
   const quality=document.createElement('div');quality.className='setting-row';
   quality.innerHTML='<div>场景画质<small>按设备调整清晰度、阴影与资源占用</small></div><select id="setting-quality" aria-label="场景画质"><option value="power">省电</option><option value="balanced">平衡</option><option value="fine">精细</option></select>';
   protection.after(quality);$('#setting-quality').value=state.quality;
@@ -1075,7 +1142,7 @@ async function chooseLibrary() {
   if(state.loading)return;
   const folder=await invoke('select-folder','选择漫画所在的文件夹'); if(!folder)return;
   const next={...state.setting,library:folder}; await invoke('save-setting',next); state.setting=next;dismiss();state.page=1;
-  if (workspace) libraryPosition={ page:1, scrollTop:0, selectedId:'' };
+  libraryPosition={ page:1, scrollTop:0, selectedId:'' };
   await load(true);
 }
 let readerIntent=0;
@@ -1180,7 +1247,7 @@ async function openReader(id, fromStart=false, counted=false) {
   if(state.reader)await closeReader(false);
   else if(pendingReaderClose)await pendingReaderClose;
   if(intent!==readerIntent)return;
-  const returnFocus = workspace && (document.activeElement?.closest('#reading-desk, #room-selection') ? document.activeElement : null);
+  const returnFocus = (document.activeElement?.closest('#reading-desk, #room-selection') ? document.activeElement : null);
   dismiss();
   $('.shell').inert=true;
   spatialRoom?.setSuspended(true);
@@ -1599,21 +1666,13 @@ const actions={
   'metadata-settings':()=>metadataUI.settings(),
   'metadata-batch':()=>metadataUI.batch(),
   'desk-featured':()=>{setWorkspace('room');roomQuery=normalizeShelfQuery({featured:true});state.page=1;renderBooks();},
-  'workspace-preview':()=>{
-    dismiss();
-    disposeRoom();
-    if (workspace) {
-      if (workspace !== 'library') state.page=libraryPosition.page;
-      workspace=null;
-      state.view=storage.get('view','shelf')==='grid'?'grid':'shelf';
-    } else {
-      libraryPosition={page:state.page, scrollTop:$('.content').scrollTop, selectedId:''};
-      enterWorkspace(startupWorkspace());
-    }
-    storage.set('workspace-preview',!!workspace);
-    renderBooks();
-    $('.content').scrollTop=workspace==='library' ? libraryPosition.scrollTop : 0;
-    (workspace ? $('.workspace-nav [aria-current="page"]') : $('[data-action="settings"]')).focus({preventScroll:true});
+  'random-book':()=>{
+    const pool = libraryIndex.books.filter(book => book.exist !== false);
+    if (!pool.length) return toast('书库里还没有可翻阅的书籍。');
+    const unread = pool.filter(book => readingStatus(book, state.progress, state.visits) !== 'finished');
+    const source = unread.length ? unread : pool;
+    const pick = source[Math.floor(Math.random() * source.length)];
+    if (pick) details(pick.id);
   },
   organizer:()=>{dismiss();return openLibraryOrganizer();},
   discovery:()=>{dismiss();return discovery.open({tab:'search'});},
@@ -1629,7 +1688,6 @@ const actions={
   tasks:()=>{dismiss();return window.YanruyuTasks.open();}, 'clear-cache':clearIdleCache,
   favorites:()=>{state.favorites=!state.favorites;state.page=1;renderBooks();},
   'reader-program':chooseReaderProgram,
-  random:()=>{const books=visibleBooks();if(books.length)details(books[Math.floor(Math.random()*books.length)].id);else toast('这个书架还是空的，先添加一些藏书吧。');},
   reset:()=>{
     if(workspace==='room') roomQuery=normalizeShelfQuery({});
     else {Object.assign(state,normalizeShelfQuery({}),{shelfId:''});$('#search').value='';}
@@ -1660,6 +1718,11 @@ document.addEventListener('click',e=>{
     }
     if(el.dataset.read)return openReader(el.dataset.read);
     if(el.dataset.readStart)return openReader(el.dataset.readStart,true);
+    if(el.dataset.nowReading)return openReader(el.dataset.nowReading);
+    if(el.dataset.deskRestart)return openReader(el.dataset.deskRestart,true);
+    if(el.dataset.deskDetails)return details(el.dataset.deskDetails);
+    if(el.dataset.deskFilter)return openDeskFilter(el.dataset.deskFilter);
+    if(el.dataset.deskTag)return openDeskTag(el.dataset.deskTag);
     if(el.dataset.retryPage)return retryPage(Number(el.dataset.retryPage));
     if(el.dataset.readerThumbnail){goPage(Number(el.dataset.readerThumbnail));$('#reader-body')?.focus({preventScroll:true});return;}
     if(el.dataset.favorite)return favorite(el.dataset.favorite);
@@ -1690,11 +1753,10 @@ document.addEventListener('click',e=>{
     if(el.dataset.tagKey){const inDetails=!!el.closest('.drawer');toggleTag(el.dataset.tagKey);if(inDetails)dismiss();return;}
     if(el.dataset.tagExclude)return toggleTag(el.dataset.tagExclude,true);
     if(el.dataset.filter){if(state.filter!==el.dataset.filter){state.filter=el.dataset.filter;state.page=1;renderBooks();}return;}
-    if(el.dataset.view){
+    if(workspace==='library'&&['grid','table'].includes(el.dataset.view)){
       if(state.view===el.dataset.view)return;
       state.view=el.dataset.view;
-      if(workspace==='library'){libraryView=state.view;storage.set('workspace-library-view',libraryView);}
-      else storage.set('view',state.view);
+      libraryView=state.view;storage.set('workspace-library-view',libraryView);
       renderBooks();return;
     }
     if(el.dataset.action)return actions[el.dataset.action]?.();

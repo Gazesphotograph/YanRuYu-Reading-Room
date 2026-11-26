@@ -53,7 +53,7 @@ async function main() {
   try {
     await launch();
     const books = await call('load-book-list', true); assert.equal(books.length, 3);
-    await page.reload(); await page.waitForSelector('#room [data-book]');
+    await page.reload(); await page.locator('button[data-workspace="library"]').click(); await page.waitForSelector('#room [data-book]');
     const a = books.find(book => path.basename(book.filepath) === 'Birch original');
     const b = books.find(book => path.basename(book.filepath) === 'Birch copy');
     assert.ok(a && b);

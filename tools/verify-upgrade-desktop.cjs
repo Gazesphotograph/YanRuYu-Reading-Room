@@ -79,7 +79,7 @@ async function verify(stableArchive, previewRuntime) {
   assert.equal(stableDigest, stableHash, 'Use the Windows x64 ZIP from the published v1.6.16 release.');
   const previewAudit = auditRelease(previewRuntime);
   const manifest = readJson(path.join(previewRuntime, 'build-manifest.json'));
-  assert.equal(manifest.developmentPreview, true);
+  assert.equal(manifest.developmentPreview, manifest.appVersion.includes('-'));
   const sources = [...listSourceFiles(), path.join(root, 'tools', 'project', 'compact-runtime.ps1')];
   for (const file of sources) {
     const relative = file.endsWith('compact-runtime.ps1') ? '优化程序磁盘占用.ps1' : path.relative(root, file).replaceAll(path.sep, '/');
@@ -108,7 +108,7 @@ async function verify(stableArchive, previewRuntime) {
     application = await _electron.launch({ executablePath: path.join(testCase.program, executable), args: [], cwd: testCase.program, env, timeout: 45000 });
     const appState = await application.evaluate(({ app }) => ({ packaged: app.isPackaged, profile: app.getPath('userData') }));
     assert.deepEqual(appState, { packaged: true, profile: path.join(testCase.store, '.reading-room') });
-    assert.equal(Boolean(readJson(path.join(testCase.program, 'build-manifest.json')).developmentPreview), preview);
+    assert.equal(readJson(path.join(testCase.program, 'build-manifest.json')).appVersion, preview ? manifest.appVersion : '1.6.16');
     page = await application.firstWindow();
     page.on('pageerror', error => errors.push(`${testCase.mode}: ${error.message}`));
     await page.locator('[data-action="settings"]').waitFor({ state: 'visible' });
@@ -358,8 +358,7 @@ async function verify(stableArchive, previewRuntime) {
       prepareRuntime(testCase.program);
       await launch(testCase, true);
       assert.deepEqual(await snapshot(testCase.store), historical, `${mode}: first upgraded launch`);
-      await page.locator('[data-action="settings"]').click();
-      await page.getByRole('button', { name: '启用 2.0 预览' }).click();
+      await page.locator('button[data-workspace="desk"][aria-current="page"]').waitFor();
       await page.locator('[data-desk-resume]').waitFor();
       await close();
       await launch(testCase, true);
@@ -415,6 +414,6 @@ async function verify(stableArchive, previewRuntime) {
 }
 
 Promise.resolve().then(() => {
-  const [stable = pointer('last-release.json').archive, preview = pointer('last-preview.json').folder] = process.argv.slice(2);
+  const [stable = path.join(root,'.build','yanruyu-1.6.16-windows-x64.zip'), preview = pointer('last-release.json').folder] = process.argv.slice(2);
   return verify(path.resolve(stable), path.resolve(preview));
 }).catch(error => { console.error(error); process.exitCode = 1; });

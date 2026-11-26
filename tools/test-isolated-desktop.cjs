@@ -78,6 +78,7 @@ async function main() {
     pass('Real scan, SQLite and cover generation use only four neutral fixture pages');
 
     await page.reload();
+    await page.locator('button[data-workspace="library"]').click();
     await page.waitForSelector('#room [data-book]', { state: 'attached' });
     await page.locator('[data-view="grid"]').click();
     await page.locator(`[data-book="${books[0].id}"]`).dblclick();
@@ -94,6 +95,7 @@ async function main() {
     application = await launch();
     page = await application.firstWindow();
     page.on('pageerror', error => errors.push(error.message));
+    await page.locator('button[data-workspace="library"]').click();
     await page.waitForSelector('#room [data-book]', { state: 'attached', timeout: 30000 });
     assert.equal(await page.evaluate(() => localStorage.getItem('yanruyu-isolated-smoke-marker')), 'retained');
     assert.equal((await page.evaluate(() => window.ipcRenderer.invoke('load-book-list', false))).length, 1);

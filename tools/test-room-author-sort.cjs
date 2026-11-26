@@ -70,7 +70,7 @@ async function waitForBooks(page, expectedIds) {
   const errors = [];
   try {
     const context = await browser.newContext({ viewport: { width: 1560, height: 1000 } });
-    await attachFakeIpc(context, model);
+    await attachFakeIpc(context, model, { startPage:'library' });
     await context.addInitScript(() => {
       if (!localStorage.getItem('room-view')) localStorage.setItem('room-view', JSON.stringify('grid'));
       localStorage.setItem('room-theme', JSON.stringify('paper'));
@@ -97,9 +97,10 @@ async function waitForBooks(page, expectedIds) {
     await waitForBooks(page, expected.slice(0, 12));
     pass('The author option sorts both pages, resets pagination, saves the preference and works with search and existing recent sorting');
 
-    await page.locator('[data-view="shelf"]').click();
+    await page.locator('button[data-workspace="room"]').click();
     await page.waitForSelector('.scene-viewport[data-scene-state="ready"]');
     await waitForBooks(page, expected.slice(0, 12));
+    await page.evaluate(()=>localStorage.setItem('room-workspace-start-page','"room"'));
     await page.reload();
     await page.waitForSelector('.scene-viewport[data-scene-state="ready"]');
     await waitForBooks(page, expected.slice(0, 12));

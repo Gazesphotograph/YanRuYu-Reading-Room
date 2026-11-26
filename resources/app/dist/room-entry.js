@@ -1,10 +1,10 @@
 (async () => {
   await import('./client-state.js');
   if (localStorage.getItem('reading-room-interface') === 'classic') {
-    localStorage.setItem('room-workspace-preview', 'true');
     if (!localStorage.getItem('room-workspace-start-page')) localStorage.setItem('room-workspace-start-page', '"library"');
-    localStorage.setItem('reading-room-interface', 'room');
   }
+  localStorage.removeItem('reading-room-interface');
+  localStorage.removeItem('room-workspace-preview');
   await import('./theme-init.js');
   await (await import('./reading-state.js')).initializeReadingState();
 

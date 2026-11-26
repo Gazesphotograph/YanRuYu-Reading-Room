@@ -144,9 +144,12 @@ function createFakeModel(books, pages) {
   };
 }
 
-async function attachFakeIpc(context, model, { forceWebglUnavailable = false } = {}) {
+async function attachFakeIpc(context, model, { forceWebglUnavailable = false, startPage } = {}) {
   await context.exposeBinding('__galleryFakeInvoke', (_source, channel, args) => model.invoke(channel, ...args));
-  await context.addInitScript(({ forceWebglUnavailable }) => {
+  await context.addInitScript(({ forceWebglUnavailable, startPage }) => {
+    if (startPage && !localStorage.getItem('room-workspace-start-page')) {
+      localStorage.setItem('room-workspace-start-page', JSON.stringify(startPage));
+    }
     const listeners = new Map();
     window.ipcRenderer = {
       invoke: async (channel, ...args) => {
@@ -174,7 +177,7 @@ async function attachFakeIpc(context, model, { forceWebglUnavailable = false } =
         return original.call(this, type, ...args);
       };
     }
-  }, { forceWebglUnavailable });
+  }, { forceWebglUnavailable, startPage });
 }
 
 function pass(name, details) {
@@ -239,9 +242,12 @@ async function bookIds(page) {
 }
 
 async function setView(page, view) {
-  await page.locator(`[data-view="${view}"]`).click();
-  await page.waitForFunction(view => document.querySelector(`[data-view="${view}"]`)?.getAttribute('aria-pressed') === 'true', view);
-  if (view === 'shelf' && await page.locator(bookSelector).count()) await waitForScene(page);
+  await page.locator(`button[data-workspace="${view==='shelf'?'room':'library'}"]`).click();
+  if (view === 'grid') await page.locator('[data-view="grid"]').click();
+  if (view === 'shelf') {
+    await page.locator('.scene-viewport, #room .empty').first().waitFor();
+    if (await page.locator('.scene-viewport').count()) await waitForScene(page);
+  }
   if (view === 'grid') await page.waitForSelector('.book-grid');
 }
 
@@ -273,7 +279,7 @@ async function withFixture(browser, fixture, callback, options = {}) {
   const consoleErrors = [];
   let page;
   try {
-    await attachFakeIpc(context, model, options);
+    await attachFakeIpc(context, model, { startPage:'room', ...options });
     page = await context.newPage();
     page.setDefaultTimeout(12000);
     page.on('pageerror', error => rendererErrors.push(error.message));
@@ -330,7 +336,9 @@ async function testPagination(browser, fixtures) {
     assert.match(await page.locator('#pagination').textContent(), /03\s*\/\s*03/);
     pass('Pagination reaches books 13–24 and a one-book final page without exceeding the last page');
     await screenshot(page, 'last-page');
+    await setView(page,'grid');
     await page.locator('#search').fill('作者乙');
+    await page.waitForFunction(() => /01\s*\/\s*01/.test(document.querySelector('#pagination')?.textContent || ''));
     await waitForCount(page, 12);
     assert.match(await page.locator('#pagination').textContent(), /01\s*\/\s*01/);
     assert.deepEqual(await bookIds(page), fixtures.books.filter((_, index) => index % 2).map(book => book.id));
@@ -343,7 +351,6 @@ async function testPagination(browser, fixtures) {
     await page.waitForSelector('#room .empty');
     await page.locator('#room [data-action="reset"]').click();
     await waitForCount(page, 12);
-    await waitForScene(page);
     await page.locator('#sort').selectOption('pages');
     await page.waitForFunction(id => document.querySelector('#room [data-book]')?.dataset.book === id, fixtures.books[24].id);
     pass('Title search, no-results reset and page-count sorting remain functional');
@@ -358,7 +365,7 @@ async function testPagination(browser, fixtures) {
 
 async function testThemes(browser, fixtures) {
   await withFixture(browser, { ...fixtures, books: fixtures.books.slice(0, 3) }, async page => {
-    await waitForScene(page);
+    await setView(page,'grid');
     for (const theme of themeIds) {
       await page.locator('#search').fill('作者甲');
       await waitForCount(page, 2);
@@ -372,14 +379,15 @@ async function testThemes(browser, fixtures) {
       await dismissDialog(page);
       assert.equal(await page.locator('#search').inputValue(), '作者甲');
       assert.deepEqual(await bookIds(page), idsBefore);
-      await waitForScene(page);
+      await setView(page,'shelf');
       assert.equal(await page.locator('.scene-viewport').getAttribute('data-scene-theme'), theme, 'Scene materials must follow the selected interface theme');
       await screenshot(page, theme);
+      await setView(page,'grid');
+      await page.evaluate(()=>localStorage.setItem('room-workspace-start-page','"library"'));
       await page.reload();
       await waitForCount(page, 2);
       assert.equal(await page.locator('#search').inputValue(), '作者甲');
       assert.deepEqual(await bookIds(page), idsBefore);
-      await waitForScene(page);
       assert.equal(await page.locator('html').getAttribute('data-room-theme'), theme);
       pass(`${theme}: theme selection preserves current results and survives reload`);
     }
@@ -409,7 +417,7 @@ async function testRestart(fixtures) {
   try {
     for (const phase of ['save', 'restore']) {
       context = await chromium.launchPersistentContext(profileDirectory, { ...launchOptions(), viewport: { width: 1280, height: 900 } });
-      await attachFakeIpc(context, model);
+      await attachFakeIpc(context, model, {startPage:'library'});
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
@@ -453,7 +461,7 @@ async function testReading(browser, fixtures) {
   await withFixture(browser, { ...fixtures, books: fixtures.books.slice(0, 3) }, async (page, model) => {
     const id = model.books[0].id;
     const target = () => page.locator(`#room [data-book="${id}"]`);
-    await waitForScene(page);
+    await page.locator('.book-grid').waitFor();
     await target().click();
     await page.waitForSelector('.drawer');
     assert.match(await page.locator('.drawer h2').textContent(), /静物档案 01/);
@@ -469,7 +477,7 @@ async function testReading(browser, fixtures) {
     await waitForCount(page, 1);
     assert.equal(await page.locator('[data-action="favorites"]').getAttribute('aria-pressed'), 'true');
     assert.equal(await page.locator('#count-favorites').textContent(), '1');
-    await waitForScene(page);
+    await page.locator('.book-grid').waitFor();
     await target().dblclick();
     await readerPage(page, 1);
     assert.equal(await page.locator('.reader').getAttribute('data-reading-mode'), 'paged');
@@ -515,12 +523,12 @@ async function testReading(browser, fixtures) {
     assert.deepEqual(await bookIds(page), [id]);
     await page.reload();
     await waitForCount(page, 1);
-    await waitForScene(page);
+    await page.locator('.book-grid').waitFor();
     await target().dblclick();
     await readerPage(page, 2);
     await page.keyboard.press('Escape');
     await page.waitForSelector('.reader', { state: 'detached' });
-    await waitForScene(page);
+    await page.locator('.book-grid').waitFor();
     await target().click();
     await page.waitForSelector('[data-read-start]');
     await page.locator('[data-read-start]').click();
@@ -534,7 +542,7 @@ async function testReading(browser, fixtures) {
     await waitForCount(page, 1);
     assert.deepEqual(await bookIds(page), [id]);
     pass('Reading progress survives reload, restart-from-first-page works, and finished filtering is accurate');
-  });
+  }, {startPage:'library'});
 }
 
 async function testReaderOptions(browser, fixtures) {
@@ -578,7 +586,7 @@ async function testReaderOptions(browser, fixtures) {
     const internalLoads = model.calls.filter(call => call.channel === 'load-manga-image-list').length;
     const readCount = model.books[0].readCount;
     model.externalError = 'Simulated unavailable external reader executable';
-    await page.locator(`[data-read="${book.id}"]`).click();
+    await page.locator(`.drawer [data-read="${book.id}"]`).click();
     await page.waitForFunction(() => document.querySelector('#reader-option-status')?.textContent.includes('无法启动'));
     assert.equal(await page.locator('.drawer .reading-options').isVisible(), true);
     assert.equal(await page.locator('#reader-program').isDisabled(), false);
@@ -587,7 +595,7 @@ async function testReaderOptions(browser, fixtures) {
     assert.equal(await page.locator('.reader').count(), 0);
     pass('External launch failure stays inline in a usable book drawer with preferences retained');
     model.externalError = null;
-    await page.locator(`[data-read="${book.id}"]`).click();
+    await page.locator(`.drawer [data-read="${book.id}"]`).click();
     await page.waitForFunction(() => !document.querySelector('[data-read]')?.disabled);
     const externalCalls = model.calls.filter(call => call.channel === 'open-local-book');
     assert.equal(externalCalls.length, 2);
@@ -608,7 +616,7 @@ async function testReaderOptions(browser, fixtures) {
     assert.equal(await page.locator('#continuous-reading').isDisabled(), false);
     assert.equal(await page.locator('#continuous-reading').isChecked(), true);
     await page.locator('#continuous-reading').uncheck();
-    await page.locator(`[data-read="${book.id}"]`).click();
+    await page.locator(`.drawer [data-read="${book.id}"]`).click();
     await readerPage(page, 1);
     assert.equal(await page.locator('.reader').getAttribute('data-reading-mode'), 'paged');
     await page.keyboard.press('Escape');
@@ -629,7 +637,7 @@ async function testContinuousReading(browser) {
     await target().click();
     await page.waitForSelector('.drawer .reading-options');
     await page.locator('#continuous-reading').check();
-    await page.locator(`[data-read="${id}"]`).click();
+    await page.locator(`.drawer [data-read="${id}"]`).click();
     await readerPage(page, 1, 64);
     assert.equal(await page.locator('.reader').getAttribute('data-reading-mode'), 'continuous');
     assert.equal(await page.locator('.reader-body.continuous-mode > .continuous-pages > .continuous-page').count(), 64);
@@ -771,7 +779,7 @@ async function testLayouts(browser, fixtures) {
     await sceneStopsRendering(page);
     await first.click();
     await page.waitForSelector('.drawer');
-    assert.equal(await page.locator('[data-read]').getAttribute('data-read'), firstId);
+    assert.equal(await page.locator('.drawer [data-read]').getAttribute('data-read'), firstId);
     await dismissDialog(page);
     await page.locator('[data-scene-camera="right"]').click();
     await sceneStopsRendering(page);
@@ -910,7 +918,7 @@ async function testSceneControls(browser, fixtures) {
     assert(Math.abs(restored.left - original.left) < 1 && Math.abs(restored.top - original.top) < 1 && Math.abs(restored.width - original.width) < 1, 'Reset must restore original book hit target geometry');
     await first.click();
     await page.waitForSelector('.drawer');
-    assert.equal(await page.locator('[data-read]').getAttribute('data-read'), firstId);
+    assert.equal(await page.locator('.drawer [data-read]').getAttribute('data-read'), firstId);
     await dismissDialog(page);
     pass('One reset restores the original composition and correctly clickable book after pan, zoom and rotation');
   });
@@ -949,12 +957,12 @@ async function testWebglFallback(browser, fixtures) {
     await noOverflow(page);
     await page.locator(bookSelector).first().click();
     await page.waitForSelector('.drawer');
-    await page.locator('[data-read]').click();
+    await page.locator('.drawer [data-read]').click();
     await readerPage(page, 1);
     await page.keyboard.press('Escape');
     await page.waitForSelector('.reader', { state: 'detached' });
     await waitForScene(page, 'fallback');
-    await page.locator('[data-view="grid"]').click();
+    await setView(page,'grid');
     await page.waitForSelector('.book-grid');
     await waitForCount(page, 3);
     pass('With WebGL unavailable, fallback still supports book details, reading and explicit grid view');

@@ -178,14 +178,14 @@ async function main() {
 
     const ui = await browser.newContext({ viewport: { width: 1560, height: 1000 } });
     await attachFakeIpc(ui, createFakeModel(books, books.filter(book => !definitions[Number(book.id.split('-')[1])].missing).map(book => book.coverPath)));
-    await ui.addInitScript(() => localStorage.setItem('room-theme', JSON.stringify('glass')));
+    await ui.addInitScript(() => { localStorage.setItem('room-workspace-start-page','"room"'); localStorage.setItem('room-theme','"glass"'); });
     const full = await ui.newPage(); full.on('pageerror', error => report.errors.push(error.message));
     await full.goto(appURL);
     await full.waitForSelector('.scene-viewport[data-scene-state="ready"]');
     await full.waitForFunction(() => [...document.querySelectorAll('.scene-book-target')].every(button => button.dataset.coverState !== 'loading'));
     await full.evaluate(() => document.fonts.ready); await full.waitForTimeout(400);
     assert.match(await full.title(), /颜如玉/);
-    assert.equal(await full.locator('.hero h1').textContent(), '书中自有颜如玉');
+    assert.equal(await full.locator('.workspace-nav [aria-current="page"]').textContent(), '阅览室');
     await full.screenshot({ path: path.join(output, '颜如玉-纯白玻璃.png'), fullPage: true });
     await full.locator('[data-action="theme"]').first().click();
     await full.locator('[data-theme-choice="dark"]').click(); await full.keyboard.press('Escape');

@@ -6,7 +6,7 @@ const NS = 'http://www.w3.org/2000/svg';
 const SURFACES = [
   ['.drawer, .modal, .themed-dialog', 'sheet'],
   ['.sidebar, .topbar, .reader-bar, .reader-bottom', 'frost'],
-  ['.search, .appearance-button, .pill-button:not(.primary), .filters, .view-toggle, .scene-controls, .scene-caption, .book-title-tooltip, .toast', 'lens'],
+  ['.search, .appearance-button, .pill-button:not(.primary):not(.tool-group .pill-button), .tool-group, .filters, .view-toggle, .scene-controls, .scene-caption, .book-title-tooltip, .toast', 'lens'],
   ['.brand-mark, .nav-btn, .reading-options', 'sheen'],
 ];
 const selector = SURFACES.map(([query]) => query).join(',');

@@ -2,7 +2,7 @@
 
 **中文** · [English](README.en.md)
 
-基于 exhentai-manga-manager 1.6.15 定制的 Windows 桌面漫画管理与阅读应用。当前版本：**2.0.0-preview.2**。
+基于 exhentai-manga-manager 1.6.15 定制的 Windows 桌面漫画管理与阅读应用。当前正式版为 **2.0.0**。
 
 ## 界面预览
 
@@ -22,9 +22,9 @@
 
 ## 下载与使用
 
-当前源码提供 **2.0 开发预览**。运行 `npm run dev` 后，在「阅览室设置」启用预览，可使用统一的书桌、书库表格和阅览室。详情提供在线元数据的字段预览，侧栏提供阅读记录和导入入口，书库提供合集管理。迁移与验证范围见 [2.0 功能验收矩阵](docs/颜如玉2.0功能验收矩阵.md)。
+2.0 启动后直接进入统一工作区。书桌可导入书库和继续阅读，书库提供封面与表格视图、合集和批量编辑，阅览室提供独立的 3D 书架。书籍详情支持预览并选择要应用的在线元数据字段。迁移与验证范围见 [2.0 功能验收矩阵](docs/颜如玉2.0功能验收矩阵.md)。
 
-从 [Releases][releases] 下载 Windows x64 ZIP，解压到新文件夹，双击 `exhentai-manga-manager.exe`。普通使用无需安装 Node.js。
+从 [2.0.0 正式版][releases] 下载 `yanruyu-2.0.0-windows-x64.zip`，解压到新文件夹，双击 `exhentai-manga-manager.exe`。普通使用无需安装 Node.js。附件 `SHA256SUMS.txt` 提供下载校验值。
 
 首次运行默认使用系统用户应用数据目录。在程序旁创建 `data` 文件夹可启用便携模式；也可以通过环境变量 `YANRUYU_DATA_DIR` 指定独立数据目录的绝对路径。
 
@@ -99,7 +99,7 @@ Windows NTFS 文件压缩仅减少实际磁盘占用，不改变文件内容或�
 
 Electron、Three.js、7-Zip 及其他依赖遵循各自随附的许可证。上游来源、保留二进制与源码恢复边界详见 [来源说明][provenance]。
 
-[releases]: https://github.com/Gazesphotograph/yanruyu-reading-room/releases
+[releases]: https://github.com/Gazesphotograph/YanRuYu-Reading-Room/releases/tag/v2.0.0
 [upstream]: https://github.com/SchneeHertz/exhentai-manga-manager
 [upgrade]: docs/使用与升级.md
 [provenance]: docs/源码来源与恢复范围.md

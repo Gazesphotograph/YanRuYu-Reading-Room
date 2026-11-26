@@ -80,7 +80,7 @@ async function browserChecks(){
   };
   const browser=await chromium.launch(launchOptions());
   try{
-    const context=await browser.newContext({viewport:{width:1280,height:850}});await attachFakeIpc(context,model);
+    const context=await browser.newContext({viewport:{width:1280,height:850}});await attachFakeIpc(context, model, { startPage:'library' });
     await context.addInitScript(()=>{localStorage.setItem('room-view','"grid"');localStorage.setItem('room-progress',JSON.stringify({'gallery-book-00':{page:'<img id="progress-injection">',total:5}}));});
     model.books[0].pageCount='<img id="metadata-injection" src="invalid">';
     const page=await context.newPage();page.on('pageerror',e=>report.errors.push(e.message));

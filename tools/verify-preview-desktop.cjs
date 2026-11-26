@@ -11,7 +11,7 @@ async function verify(folder) {
   if(!isWithin(path.join(root,'out'),folder))throw new Error('Preview package must be a generated folder below out/.');
   const executable=path.join(folder,'exhentai-manga-manager.exe');
   const manifest=JSON.parse(fs.readFileSync(path.join(folder,'build-manifest.json'),'utf8'));
-  assert.equal(manifest.developmentPreview,true);
+  assert.equal(manifest.developmentPreview,manifest.appVersion.includes('-'));
   auditRelease(folder);
   const fixture=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-preview-verification-'));
   const data=path.join(fixture,'data'),library=path.join(fixture,'library'),bookFolder=path.join(library,'Neutral packaged reader');
@@ -40,7 +40,7 @@ async function verify(folder) {
       return require('./modules/metadata_sources').decodeText('Caf&eacute; &NotEqualTilde;');
     });
     assert.equal(decoded,'Café ≂̸');
-    await page.locator('[data-action="settings"]').click();await page.getByRole('button',{name:'启用 2.0 预览'}).click();
+    await page.locator('button[data-workspace="desk"][aria-current="page"]').waitFor();
     await application.evaluate(({dialog},selected)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[selected]});},library);
     await page.locator('#reading-desk').getByRole('button',{name:'选择书库文件夹'}).click();
     const book=page.locator('[data-desk-book]').first();await book.waitFor();const id=await book.getAttribute('data-read');

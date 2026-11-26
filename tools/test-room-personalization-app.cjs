@@ -27,7 +27,7 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-personal-app-'));
     model.readingState.migrations.legacyV1={migratedAt:Date.now()};
     browser=await chromium.launch(launchOptions());
     const context=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'});
-    await context.route(/^https?:/,route=>route.abort());await attachFakeIpc(context,model);
+    await context.route(/^https?:/,route=>route.abort());await attachFakeIpc(context, model, { startPage:'room' });
     await context.addInitScript(()=>{
       window.AudioContext=class {
         constructor(){window.__personalAudio=this;this.state='suspended';this.sampleRate=1000;this.currentTime=1;this.destination={};}
@@ -40,7 +40,8 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-personal-app-'));
     });
     const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
     await page.goto(appURL);await page.locator('#room [data-book]').first().waitFor();
-    await page.locator('[data-action="featured"]').click();await page.locator('#room .empty').waitFor();
+    await page.locator('button[data-workspace="desk"]').click();
+    await page.locator('button[data-workspace="room"]').click();
     await page.locator('[data-action="personalization"]').click();await page.locator('[data-personal-tab="featured"]').click();
     await page.locator(`[data-personal-add="${first}"]`).click();
     await page.waitForFunction(()=>document.querySelector('.scene-viewport'));
@@ -71,7 +72,8 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-personal-app-'));
     assert.equal(await page.locator('.scene-viewport').getAttribute('data-room-brightness'),'113');
     assert.equal(await page.locator('.scene-viewport').getAttribute('data-camera-target-yaw'),'0.13');
     assert.equal(await page.evaluate(()=>!!window.__personalAudio),false,'Reloaded root shell must not autoplay saved ambience');
-    assert.equal(await page.locator('[data-action="featured"]').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(await page.locator('#room [data-book]').evaluateAll(nodes=>nodes.map(node=>node.dataset.book)),[second,first]);
+    assert.match(await page.textContent('#room-context-label'),/精选陈列/);
     for(const expected of [{theme:'dark',layout:'balanced',brightness:'100',yaw:'0'},{theme:'paper',layout:'airy',brightness:'113',yaw:'0.13'}]){
       await page.locator('[data-action="theme"]').first().click();await page.locator(`[data-theme-choice="${expected.theme}"]`).click();
       await page.locator('[data-action="dismiss"]').first().click();
@@ -83,7 +85,7 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-personal-app-'));
     }
     await page.locator('[data-action="personalization"]').click();await page.locator('[data-personal-play]').click();
     await page.waitForFunction(()=>window.__personalAudio?.state==='running');await page.locator('[data-action="dismiss"]').click();
-    await page.locator(`#room [data-book="${first}"]`).click();await page.locator('[data-read]').click();
+    await page.locator(`#room [data-book="${first}"]`).click();await page.locator('.drawer [data-read]').click();
     await page.locator('.reader').waitFor();await page.waitForFunction(()=>window.__personalAudio?.state==='suspended');
     await page.waitForFunction(()=>document.querySelector('#reader-page')?.textContent.includes('/ 5'));
     const readerFrame=await page.locator('.scene-viewport').getAttribute('data-render-count');await page.waitForTimeout(180);

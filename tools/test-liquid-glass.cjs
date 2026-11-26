@@ -97,7 +97,7 @@ async function withFixture(browser, fixtures, callback, options = {}) {
   const errors = [], consoleErrors = [];
   let page;
   try {
-    await attachFakeIpc(context, model);
+    await attachFakeIpc(context, model, { startPage:'library' });
     await context.addInitScript(({ theme }) => {
       if (localStorage.getItem('room-theme') === null) localStorage.setItem('room-theme', JSON.stringify(theme));
       const request = window.requestAnimationFrame.bind(window), cancel = window.cancelAnimationFrame.bind(window);
@@ -118,7 +118,6 @@ async function withFixture(browser, fixtures, callback, options = {}) {
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     await page.goto(appURL);
     await page.waitForSelector('#room [data-book]');
-    await page.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneState === 'ready', null, { timeout: 30000 });
     await page.evaluate(() => document.fonts.ready);
     await callback(page, context, model);
     assert.deepEqual(errors, [], 'Uncaught renderer errors');

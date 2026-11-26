@@ -41,7 +41,7 @@ async function main() {
   try {
     const model = tasksModel(createFakeModel(fixtures.books, fixtures.pages));
     const context = await browser.newContext({ viewport: { width: 1080, height: 800 } });
-    await attachFakeIpc(context, model);
+    await attachFakeIpc(context, model, { startPage:'library' });
     const page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto(appURL); await page.waitForSelector('#room [data-book]');
     await page.locator('[data-action="tasks"]').click(); await page.waitForSelector('.task-center-dialog[open]');

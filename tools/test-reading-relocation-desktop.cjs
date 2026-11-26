@@ -100,6 +100,7 @@ async function main() {
   }
 
   async function assertShelf(ids, originalId) {
+    await page.locator('button[data-workspace="room"]').click();
     await page.waitForSelector('#room .scene-book-target', { state: 'attached', timeout: 30000 });
     assert.equal(await page.locator('#room .scene-canvas').count(), 1, 'The real 3D shelf is mounted');
     const state = await page.evaluate(id => ({

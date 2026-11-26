@@ -65,11 +65,11 @@ function uiModel(model) {
   return model;
 }
 
-async function withRoom(browser, fixtures, callback) {
+async function withRoom(browser, fixtures, callback, { startPage = 'room' } = {}) {
   const context = await browser.newContext({ viewport: { width: 1560, height: 1000 } });
   const model = uiModel(createFakeModel(fixtures.books, fixtures.pages));
   await context.route(/^https?:/, route => route.abort());
-  await attachFakeIpc(context, model);
+  await attachFakeIpc(context, model, { startPage });
   await context.addInitScript(() => {
     if (localStorage.getItem('room-theme') === null) localStorage.setItem('room-theme', JSON.stringify('glass'));
   });
@@ -79,7 +79,9 @@ async function withRoom(browser, fixtures, callback) {
   try {
     await page.goto(appURL);
     await page.locator('#room [data-book]').first().waitFor();
-    await page.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneState === 'ready', null, { timeout: 30000 });
+    if (startPage === 'room') {
+      await page.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneState === 'ready', null, { timeout: 30000 });
+    }
     await settleVisuals(page);
     await callback(page, model);
   } catch (error) {
@@ -110,7 +112,7 @@ const panels = [
   { name: 'organizer', trigger: '[data-action="organizer"]', selector: '.library-organizer-dialog', ready: '.organizer-book', close: '[data-organizer="close"]' },
   { name: 'discovery', trigger: '[data-action="discovery"]', selector: '.discovery-dialog', ready: '[data-discovery-search]', close: '[data-discovery-close]' },
   { name: 'personalization', trigger: '[data-action="personalization"]', selector: '.modal:has(#room-personalization)', ready: '[data-personal-layout]', close: '[data-action="dismiss"]' },
-  { name: 'settings', trigger: '[data-action="settings"]', selector: '.modal:has(#setting-view)', ready: '#cache-budget', close: '[data-action="dismiss"]' },
+  { name: 'settings', trigger: '[data-action="settings"]', selector: '.modal:has(#workspace-start-page)', ready: '#cache-budget', close: '[data-action="dismiss"]' },
 ];
 
 async function openPanel(page, descriptor) {
@@ -270,6 +272,9 @@ async function roomLayoutCheck(browser, fixtures) {
       await theme(page, id);
       for (const viewport of [{ width: 1560, height: 760 }, { width: 1280, height: 560 }, { width: 950, height: 520 }, { width: 720, height: 480 }, { width: 420, height: 640 }]) {
         await page.setViewportSize(viewport); await settleVisuals(page);
+        await page.locator('button[data-workspace="library"]').click();
+        await page.locator('.book-grid').waitFor();
+        await settleVisuals(page);
         const before = await page.locator('.topbar').boundingBox();
         const scrolled = await page.locator('.content').evaluate(element => {
           element.scrollTop = element.scrollHeight;
@@ -292,10 +297,7 @@ async function roomLayoutCheck(browser, fixtures) {
         });
         assert(!sidebar.visible || (sidebar.listBottom <= sidebar.browserBottom + 1 && sidebar.listBottom <= sidebar.navigationTop + 1),
           `Short-window tags overlap the sidebar navigation: ${JSON.stringify(sidebar)}`);
-        const icons = await checkIcons(page, '.scene-controls button, .window-controls button, .view-toggle button, .pagination > button', 'Room controls');
-        await page.locator('[data-scene-camera="left"]').hover();
-        await settleVisuals(page);
-        await checkIcons(page, '.scene-controls button', 'Hovered scene controls');
+        const icons = await checkIcons(page, '.window-controls button, .view-toggle button, .pagination > button', 'Library controls');
         const footer = await page.locator('.pagination').evaluate(element => {
           const controls = [...element.querySelectorAll('button,input,span')].filter(node => node.getBoundingClientRect().height > 0);
           const centres = controls.map(node => { const r = node.getBoundingClientRect(); return (r.top + r.bottom) / 2; });
@@ -306,10 +308,18 @@ async function roomLayoutCheck(browser, fixtures) {
         const settings = page.locator('.sidebar [data-action="settings"]');
         await settings.scrollIntoViewIfNeeded(); assertVisibleHit(await hitState(settings), 'Sidebar settings after independent scrolling');
         await page.locator('.sidebar').evaluate(element => { element.scrollTop = 0; });
+        await page.locator('button[data-workspace="room"]').click();
+        await page.waitForFunction(() => document.querySelector('.scene-viewport')?.dataset.sceneState === 'ready', null, { timeout: 30000 });
+        await settleVisuals(page);
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '3D room overflows horizontally');
+        await checkIcons(page, '.scene-controls button', 'Room scene controls');
+        await page.locator('[data-scene-camera="left"]').hover();
+        await settleVisuals(page);
+        await checkIcons(page, '.scene-controls button', 'Hovered scene controls');
         pass(`${id} room ${viewport.width}x${viewport.height}: topbar stays visible, icons stay centred and pagination aligns`, { scrolled, sidebar, footer, icons });
       }
     }
-  });
+  }, { startPage: 'library' });
 }
 
 async function dialogLayoutCheck(browser, fixtures) {

@@ -1,5 +1,33 @@
 # 更新日志 / Changelog
 
+## 2.0.0 · 2026-11-26
+
+### 中文
+
+颜如玉首个 2.0 正式版面向 Windows x64 发布。
+
+- **统一工作区**。启动直接进入书桌、书库和阅览室。书桌可导入和续读，书库的封面与表格视图和 3D 阅览室共享筛选、排序与选择。
+- **书库管理**。支持合集、智能书架、批量编辑预览、重复书对照与撤销、缺失书目重新定位。书籍详情可逐项选择要应用的在线元数据。
+- **阅读与外观**。内置阅读器支持单页、双页和连续阅读，以及逐书保存进度和设置。暖白、静夜、纯白液态玻璃和 EX 私人图库四套主题共用颜色与界面样式。
+- **旧版兼容**。经典管理页和旧阅读器已退役。已有书库、合集和可匹配的旧阅读进度沿用原数据目录。可在「系统与阅读设置」选择自己的外部阅读程序。
+
+下载 `yanruyu-2.0.0-windows-x64.zip`，用同页的 `SHA256SUMS.txt` 校验，解压后运行 `exhentai-manga-manager.exe`。升级前先创建并验证备份，再退出旧版。Windows OCR 需要安装系统对应语言的识别组件。[正式版下载][release-2] · [使用与升级][upgrade-2] · [验收记录][audit-2]
+
+### English
+
+This is the first stable Yanruyu 2.0 release for Windows x64.
+
+- **Unified workspace.** Start at the desk, browse the library in cover or table view, and switch to the 3D reading room while keeping your filters, sorting, and selection.
+- **Library management.** Manage collections and smart shelves, preview batch edits, compare duplicates, undo organization changes, relocate missing books, and apply individual online metadata fields.
+- **Reader and themes.** Read in single-page, double-page, or continuous mode with per-book progress and preferences. Warm White, Quiet Night, White Liquid Glass, and EX share a common theme system.
+- **Upgrade compatibility.** The unified workspace and built-in reader replace the classic interfaces. Your existing data directory retains the library, collections, and supported reading history. An external reader can still be selected in System and Reading Settings.
+
+Download `yanruyu-2.0.0-windows-x64.zip`, verify it against `SHA256SUMS.txt`, extract it, and run `exhentai-manga-manager.exe`. Create and verify a backup before exiting the old version and upgrading. Windows OCR requires the relevant system language components. [Release downloads][release-2] · [Upgrade guide][upgrade-2] · [Verification record][audit-2]
+
+[release-2]: https://github.com/Gazesphotograph/YanRuYu-Reading-Room/releases/tag/v2.0.0
+[upgrade-2]: docs/使用与升级.md
+[audit-2]: docs/颜如玉2.0发布验收审计.md
+
 ## 2.0.0-preview.2 · 2026-11-26
 
 - 经典管理配置自动进入工作区并沿用旧书库、合集和阅读档案。书页复制、设封面、删除、切书，以及元数据目录和系统选项已接入现有界面。

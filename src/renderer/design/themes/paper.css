@@ -1,47 +1,47 @@
 /* Paper & Walnut — Warm paper light theme */
 :root[data-room-theme="paper"] {
-  --yr-bg: #f3f1eb;
-  --yr-bg-sidebar: #eae8df;
-  --yr-surface: #fcfbf7;
-  --yr-surface-subtle: #f5f3ed;
+  --yr-bg: #f5f6f8;
+  --yr-bg-sidebar: #eceff4;
+  --yr-surface: #ffffff;
+  --yr-surface-subtle: #f3f5f8;
   --yr-surface-raised: #ffffff;
-  --yr-surface-hover: #eceae1;
-  --yr-overlay: rgb(39 44 32 / 0.42);
+  --yr-surface-hover: #ebeff4;
+  --yr-overlay: rgb(20 31 48 / 0.28);
 
-  --yr-text: #293b32;
-  --yr-text-muted: #60685c;
+  --yr-text: #17202a;
+  --yr-text-muted: #616e7e;
 
-  --yr-border: #d8dbd0;
-  --yr-border-strong: #b9beb0;
+  --yr-border: #dfe4ec;
+  --yr-border-strong: #c8d0dc;
 
-  --yr-accent: #315445;
-  --yr-accent-hover: #274437;
-  --yr-accent-secondary: #95603f;
-  --yr-accent-soft: #e0e6da;
-  --yr-accent-ink: #fffef8;
+  --yr-accent: #137963;
+  --yr-accent-hover: #0e6c5a;
+  --yr-accent-secondary: #d4503a;
+  --yr-accent-soft: #e3f4ef;
+  --yr-accent-ink: #ffffff;
 
-  --yr-danger: #b8323c;
-  --yr-danger-hover: #9c2831;
-  --yr-danger-soft: #fbecef;
+  --yr-danger: #c22d3a;
+  --yr-danger-hover: #a4232f;
+  --yr-danger-soft: #fdf0f1;
   --yr-danger-ink: #ffffff;
 
-  --yr-success: #2d6a4f;
-  --yr-success-soft: #e3f1ea;
-  --yr-warning: #9a5b13;
-  --yr-warning-soft: #fdf3e2;
+  --yr-success: #1b6e4c;
+  --yr-success-soft: #e8f5ef;
+  --yr-warning: #9c560a;
+  --yr-warning-soft: #fdf4e6;
 
-  --yr-focus-ring: #315445;
-  --yr-shadow-rgb: 39 44 32;
+  --yr-focus-ring: #137963;
+  --yr-shadow-rgb: 20 31 48;
 
-  --yr-radius-control: var(--yr-radius-sm);
-  --yr-radius-panel: var(--yr-radius-md);
-  --yr-radius-dialog: var(--yr-radius-lg);
+  --yr-radius-control: var(--yr-radius-md);
+  --yr-radius-panel: var(--yr-radius-lg);
+  --yr-radius-dialog: var(--yr-radius-xl);
 
-  --yr-reader-bg: #1b211d;
-  --yr-reader-bar: #222a24;
-  --yr-reader-ink: #e8eadf;
-  --yr-reader-muted: #aeb9a8;
-  --yr-reader-focus: #b6c8a6;
+  --yr-reader-bg: #101318;
+  --yr-reader-bar: #171b22;
+  --yr-reader-ink: #eef2f7;
+  --yr-reader-muted: #93a0b2;
+  --yr-reader-focus: #38bdf8;
 
   color-scheme: light;
 }

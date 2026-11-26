@@ -48,6 +48,7 @@ async function roomContext(browser, options = {}) {
   const page = await context.newPage(); page.setDefaultTimeout(15000);
   page.on('pageerror', error => report.errors.push(error.message));
   await page.goto(appURL);
+  await page.locator('button[data-workspace="library"]').click();
   await page.waitForSelector('#room [data-book]');
   return { model, context, page };
 }

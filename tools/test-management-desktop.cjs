@@ -60,7 +60,7 @@ require(${JSON.stringify(path.join(target.app,'index.js'))});`);
     await page.evaluate(()=>{localStorage.setItem('reading-room-interface','classic');localStorage.setItem('room-workspace-library-view',JSON.stringify('table'));location.reload();});
     await page.getByRole('table',{name:'书库结果'}).waitFor();
     assert.equal(await page.locator('[data-action="classic"]').count(),0);
-    assert.equal(await page.evaluate(()=>localStorage.getItem('reading-room-interface')),'room');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('reading-room-interface')),null);
     await invoke('save-reading-progress',first.id,{page:2,total:4,time:Date.now()-7200000,source:'room'});
     await close();
     const readingFile=path.join(data,'reading-state.json'),old=JSON.parse(fs.readFileSync(readingFile,'utf8'));

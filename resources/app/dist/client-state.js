@@ -5,7 +5,7 @@ const keys = [
   'expandNodes', 'sortValue', 'room-theme', 'room-sort', 'room-view',
   'room-progress', 'room-reading-mode', 'room-external-reader',
   'room-library-state', 'room-smart-shelves', 'room-quality', 'room-personalization',
-  'room-workspace-preview', 'room-workspace-library-view', 'room-workspace-start-page',
+  'room-workspace-library-view', 'room-workspace-start-page',
   'reading-room-theme', 'manager-theme', 'theme', 'room-night', 'appTheme',
 ];
 let lastSaved = '', timer = 0, unavailable = false, suspended = false;
