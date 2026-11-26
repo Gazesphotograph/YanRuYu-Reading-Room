@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "node tools/project/dev.cjs",
     "build": "node tools/project/build.cjs",
+    "build:ui": "node tools/project/build-ui.cjs",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
     "package": "node tools/project/package.cjs",
     "check": "node tools/project/check.cjs",
     "test": "node tools/project/test.cjs",
@@ -22,8 +24,14 @@
     "manager:reference": "node tools/project/manager-reference.cjs"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.11",
     "electron": "44.3.0",
+    "pinia": "4.1.0",
     "playwright": "1.63.0",
-    "rcedit": "5.0.2"
+    "rcedit": "5.0.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.8",
+    "vue": "3.5.46",
+    "vue-tsc": "3.3.14"
   }
 }

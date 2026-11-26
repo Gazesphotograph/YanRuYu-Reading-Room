@@ -1,0 +1,123 @@
+/* Yanruyu 2.0 Design Tokens
+ * Layer 1: scale primitives (spacing, radius, typography, z-index, motion).
+ * Layer 2: semantic defaults (aligned to the default `paper` theme).
+ *
+ * Components MUST consume ONLY `--yr-*` semantic tokens.
+ * Zero `!important`; zero theme selectors in component stylesheets.
+ */
+
+:root {
+  /* Layer 1 — Spacing scale */
+  --yr-space-1: 4px;
+  --yr-space-2: 8px;
+  --yr-space-3: 12px;
+  --yr-space-4: 16px;
+  --yr-space-5: 20px;
+  --yr-space-6: 24px;
+  --yr-space-8: 32px;
+  --yr-space-10: 40px;
+  --yr-space-12: 48px;
+
+  /* Layer 1 — Border radius scale */
+  --yr-radius-xs: 3px;
+  --yr-radius-sm: 6px;
+  --yr-radius-md: 8px;
+  --yr-radius-lg: 12px;
+  --yr-radius-xl: 16px;
+  --yr-radius-pill: 999px;
+
+  /* Layer 1 — Typography scale */
+  --yr-font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --yr-font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+  --yr-font-serif: Georgia, "Songti SC", "SimSun", serif;
+
+  --yr-text-xs: 11px;
+  --yr-text-sm: 12px;
+  --yr-text-md: 13px;
+  --yr-text-base: 14px;
+  --yr-text-lg: 16px;
+  --yr-text-xl: 20px;
+  --yr-text-2xl: 24px;
+
+  --yr-leading-tight: 1.25;
+  --yr-leading-normal: 1.5;
+  --yr-leading-relaxed: 1.7;
+
+  --yr-weight-regular: 400;
+  --yr-weight-medium: 500;
+  --yr-weight-semibold: 600;
+  --yr-weight-bold: 700;
+
+  /* Layer 1 — Z-index scale */
+  --yr-z-base: 0;
+  --yr-z-sticky: 20;
+  --yr-z-header: 40;
+  --yr-z-popover: 100;
+  --yr-z-dialog: 200;
+  --yr-z-toast: 300;
+  --yr-z-showcase: 99999;
+
+  /* Layer 1 — Motion */
+  --yr-duration-fast: 120ms;
+  --yr-duration-normal: 180ms;
+  --yr-duration-slow: 260ms;
+  --yr-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layer 2 — Semantic surface & color tokens (default: paper) */
+  --yr-bg: #f3f1eb;
+  --yr-bg-sidebar: #eae8df;
+  --yr-surface: #fcfbf7;
+  --yr-surface-subtle: #f5f3ed;
+  --yr-surface-raised: #ffffff;
+  --yr-surface-hover: #eceae1;
+  --yr-overlay: rgb(39 44 32 / 0.42);
+
+  --yr-text: #293b32;
+  --yr-text-muted: #60685c;
+
+  --yr-border: #d8dbd0;
+  --yr-border-strong: #b9beb0;
+
+  --yr-accent: #315445;
+  --yr-accent-hover: #274437;
+  --yr-accent-secondary: #95603f;
+  --yr-accent-soft: #e0e6da;
+  --yr-accent-ink: #fffef8;
+
+  --yr-danger: #b8323c;
+  --yr-danger-hover: #9c2831;
+  --yr-danger-soft: #fbecef;
+  --yr-danger-ink: #ffffff;
+
+  --yr-success: #2d6a4f;
+  --yr-success-soft: #e3f1ea;
+  --yr-warning: #9a5b13;
+  --yr-warning-soft: #fdf3e2;
+
+  --yr-focus-ring: #315445;
+  --yr-focus-ring-offset: 2px;
+
+  --yr-shadow-rgb: 39 44 32;
+  --yr-shadow-sm: 0 1px 2px rgb(var(--yr-shadow-rgb) / 0.08);
+  --yr-shadow-md: 0 6px 20px -6px rgb(var(--yr-shadow-rgb) / 0.16), 0 2px 6px rgb(var(--yr-shadow-rgb) / 0.08);
+  --yr-shadow-lg: 0 20px 56px -14px rgb(var(--yr-shadow-rgb) / 0.28), 0 4px 14px rgb(var(--yr-shadow-rgb) / 0.12);
+
+  --yr-radius-control: var(--yr-radius-sm);
+  --yr-radius-panel: var(--yr-radius-md);
+  --yr-radius-dialog: var(--yr-radius-lg);
+
+  /* Reader semantic tokens */
+  --yr-reader-bg: #1b211d;
+  --yr-reader-bar: #222a24;
+  --yr-reader-ink: #e8eadf;
+  --yr-reader-muted: #aeb9a8;
+  --yr-reader-focus: #b6c8a6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --yr-duration-fast: 0.01ms;
+    --yr-duration-normal: 0.01ms;
+    --yr-duration-slow: 0.01ms;
+  }
+}

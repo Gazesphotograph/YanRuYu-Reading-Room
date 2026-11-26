@@ -44,6 +44,8 @@ npm run dev
 | 命令 | 用途 |
 | --- | --- |
 | `npm run check` | JavaScript 语法、发布源文件允许列表与配置格式 |
+| `npm run build:ui` | 类型检查 `src/renderer` 并用 Vite 生成 `resources/app/dist/app/`。`build`、`dev`、`test` 会自动执行；直接运行单个测试脚本或项目根目录的便携程序前需先执行一次 |
+| `npm run typecheck` | 仅做 Vue / TypeScript 类型检查 |
 | `npm test` | 精简工作区回归。用两本模拟书检查进入和离开阅览室、窄窗操作与封面降级 |
 | `npm run test:engineering` | 数据路径隔离、发布允许列表与精简运行时检查 |
 | `npm run test:desktop` | 使用中性测试书库验证真实 Electron、IPC、SQLite 与图片解码 |
@@ -65,7 +67,9 @@ npm run dev
 | --- | --- |
 | `resources/app/index.js`、`modules/`、`fileLoader/` | Electron 主进程、数据库与文件处理 |
 | `resources/app/preload.js` | 受限桌面接口桥接 |
-| `resources/app/dist/room*.js` 与配套模块、CSS | 直接运行、可维护的阅览室前端源码 |
+| `src/renderer/` | 新前端（Vue 3 + Pinia + TypeScript，Vite 构建）。UI 重构期间由它启动并承载原生界面，各页面逐步迁入 |
+| `resources/app/dist/app/` | `src/renderer` 的构建产物，被 Git 忽略，勿手改 |
+| `resources/app/dist/room*.js` 与配套模块、CSS | 原生阅览室前端源码，重构期间逐步迁入 `src/renderer` |
 | `resources/app/dist/assets/` | 当前定制管理界面与旧阅读器的保留产物 |
 | `resources/app/dist/vendor/` | 随附前端依赖及许可证 |
 | `resources/extraResources/` | 7-Zip、外部阅读器及随附许可证 |

@@ -1,0 +1,47 @@
+/* Paper & Walnut — Warm paper light theme */
+:root[data-room-theme="paper"] {
+  --yr-bg: #f3f1eb;
+  --yr-bg-sidebar: #eae8df;
+  --yr-surface: #fcfbf7;
+  --yr-surface-subtle: #f5f3ed;
+  --yr-surface-raised: #ffffff;
+  --yr-surface-hover: #eceae1;
+  --yr-overlay: rgb(39 44 32 / 0.42);
+
+  --yr-text: #293b32;
+  --yr-text-muted: #60685c;
+
+  --yr-border: #d8dbd0;
+  --yr-border-strong: #b9beb0;
+
+  --yr-accent: #315445;
+  --yr-accent-hover: #274437;
+  --yr-accent-secondary: #95603f;
+  --yr-accent-soft: #e0e6da;
+  --yr-accent-ink: #fffef8;
+
+  --yr-danger: #b8323c;
+  --yr-danger-hover: #9c2831;
+  --yr-danger-soft: #fbecef;
+  --yr-danger-ink: #ffffff;
+
+  --yr-success: #2d6a4f;
+  --yr-success-soft: #e3f1ea;
+  --yr-warning: #9a5b13;
+  --yr-warning-soft: #fdf3e2;
+
+  --yr-focus-ring: #315445;
+  --yr-shadow-rgb: 39 44 32;
+
+  --yr-radius-control: var(--yr-radius-sm);
+  --yr-radius-panel: var(--yr-radius-md);
+  --yr-radius-dialog: var(--yr-radius-lg);
+
+  --yr-reader-bg: #1b211d;
+  --yr-reader-bar: #222a24;
+  --yr-reader-ink: #e8eadf;
+  --yr-reader-muted: #aeb9a8;
+  --yr-reader-focus: #b6c8a6;
+
+  color-scheme: light;
+}

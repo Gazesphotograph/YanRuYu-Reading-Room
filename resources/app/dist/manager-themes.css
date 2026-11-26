@@ -1,4 +1,4 @@
-/* The complete manager uses the same eight materials as the reading room.
+/* The complete manager uses the same four materials as the reading room.
    Existing component variables are mapped here, preserving every management view. */
 :root.manager-interface[data-room-theme="paper"] {
   --paper: #f3f1eb;
@@ -14,6 +14,21 @@
   --control-bg: #315445;
   --panel-radius: 8px;
   --shadow-rgb: 45 52 42;
+}
+:root.manager-interface[data-room-theme="dark"] {
+  --paper: #18181b;
+  --side: #121215;
+  --surface: #202024;
+  --ink: #ececf0;
+  --muted: #a1a1aa;
+  --line: #333339;
+  --green: #93b4d8;
+  --orange: #d4b483;
+  --soft-accent: #2b2e36;
+  --active-ink: #141417;
+  --control-bg: #93b4d8;
+  --panel-radius: 6px;
+  --shadow-rgb: 0 0 0;
 }
 
 :root.manager-interface {
@@ -72,9 +87,6 @@
   --cat-violet: #bca4d9;
   --cat-star: #d7b17a;
   --manager-danger: #f28c94;
-}
-:root.manager-interface[data-room-theme="acid"] {
-  --cat-on-accent: #f7faf0;
 }
 
 .manager-interface :is(.el-button, .el-input__wrapper, .el-textarea__inner, .el-select__wrapper,
@@ -389,17 +401,6 @@ html.manager-interface,
   outline: 2px solid var(--green);
   outline-offset: 3px;
 }
-
-.manager-interface[data-room-theme="terminal"] :is(.titlebar-brand, .theme-card-sub, .el-tabs__item) {
-  font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
-}
-.manager-interface[data-room-theme="hub"] .titlebar-brand b {
-  padding: 2px 6px;
-  border-radius: 3px;
-  color: var(--active-ink);
-  background: var(--green);
-}
-.manager-interface[data-room-theme="acid"] .theme-card[aria-pressed="true"] { box-shadow: 3px 3px 0 var(--green); }
 
 @media (max-width: 1100px) {
   :root.manager-interface { --manager-dock-inset: 14px; --manager-shortcut-width: 126px; --manager-dock-gap: 8px; }

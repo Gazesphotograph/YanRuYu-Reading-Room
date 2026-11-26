@@ -4,13 +4,9 @@ import * as THREE from './vendor/three.module.min.js';
 // materials and texture cache; changing pages never starts an animation loop.
 const ENVIRONMENTS = {
   paper: { floor:'oak', wall:'plaster', shape:'arch', sky:['#a9c0bd','#f4d7a5'], trim:'#e0d6bf', pot:'#b78260', leaf:'#677a55', leafLight:'#8c9870', animal:'#b68661', animalKind:'cat', plant:'olive', object:'clock', day:true, light:'#ffe2a4', label:'胡桃木 · 午后日光' },
+  dark: { floor:'oak', wall:'plaster', shape:'arch', sky:['#1b1e26','#4a5260'], trim:'#4a4c56', pot:'#6f6a64', leaf:'#6e7878', leafLight:'#95a3a8', animal:'#9498a2', animalKind:'bird', plant:'fern', object:'lantern', day:false, light:'#b8c7d9', label:'中性深灰 · 静夜柔光' },
   glass: { floor:'terrazzo', wall:'limewash', shape:'rect', sky:['#b1cbd4','#edf2df'], trim:'#f5f7f3', pot:'#dbe2db', leaf:'#849d89', leafLight:'#b6c6ac', animal:'#c2ccc7', animalKind:'cat', plant:'eucalyptus', object:'vase', day:true, light:'#f6fff6', label:'纯白玻璃 · 晴窗柔光' },
-  forest: { floor:'oak', wall:'timber', shape:'arch', sky:['#172c35','#617b72'], trim:'#59634e', pot:'#8e7960', leaf:'#7b9366', leafLight:'#a3b285', animal:'#a4a38a', animalKind:'bird', plant:'fern', object:'lantern', day:false, light:'#c5d9ef', label:'深木苔绿 · 林间月光' },
-  hub: { floor:'parquet', wall:'brick', shape:'rect', sky:['#342f3b','#b97942'], trim:'#77654e', pot:'#a36e3c', leaf:'#7d8a62', leafLight:'#a7a56d', animal:'#625b50', animalKind:'cat', plant:'cactus', object:'lamp', day:false, light:'#ffcf88', label:'炭砖黄铜 · 都市暮色' },
   ex: { floor:'stone', wall:'linen', shape:'arch', sky:['#6a717d','#bab9ae'], trim:'#b8aa8c', pot:'#c3baa4', leaf:'#929782', leafLight:'#b6b89d', animal:'#c0b9aa', animalKind:'cat', plant:'olive', object:'vase', day:false, light:'#e7e1cf', label:'织纹石墨 · 静夜米金' },
-  terminal: { floor:'tile', wall:'panel', shape:'rect', sky:['#233c35','#87ac88'], trim:'#6e8c73', pot:'#77856a', leaf:'#8eac76', leafLight:'#bed29d', animal:'#9cb778', animalKind:'frog', plant:'bonsai', object:'terrarium', day:true, light:'#d1efd0', label:'墨绿档案 · 雨后青光' },
-  neon: { floor:'basalt', wall:'brushed', shape:'circle', sky:['#352c55','#84739f'], trim:'#ada1c1', pot:'#a091b7', leaf:'#839c9c', leafLight:'#b4c9bf', animal:'#c1b2d0', animalKind:'rabbit', plant:'succulent', object:'lamp', day:false, light:'#a9d8e5', label:'紫灰石面 · 星月冷光' },
-  acid: { floor:'checker', wall:'plaster', shape:'arch', sky:['#d4babd','#e8daab'], trim:'#bac38d', pot:'#b36d91', leaf:'#909e52', leafLight:'#bbcd75', animal:'#d3a4b5', animalKind:'rabbit', plant:'cactus', object:'clock', day:true, light:'#f9e8af', label:'鼠尾草棋盘 · 花间暖阳' },
 };
 
 function seeded(seed) {
@@ -138,25 +134,10 @@ function skyTexture(room, theme, config, aspect) {
       ctx.fillStyle = 'rgba(255,255,245,.25)';
       for (const [cx, cy, rx] of [[.16, .24, .22], [.78, .50, .30]]) { ctx.beginPath(); ctx.ellipse(w * cx, h * cy, w * rx, h * .020, -.05, 0, Math.PI * 2); ctx.fill(); }
     }
-    if (theme === 'hub' || theme === 'neon') {
-      ctx.fillStyle = theme === 'hub' ? '#474043' : '#59516d';
-      for (let i = 0; i < 14; i++) {
-        const bw = 20 + rand() * 25, top = h * (.62 + rand() * .23), left = i * w / 12 - 10;
-        ctx.fillRect(left, top, bw, h - top);
-        ctx.fillStyle = theme === 'hub' ? 'rgba(249,200,117,.38)' : 'rgba(166,215,228,.35)';
-        for (let yy = top + 12; yy < h; yy += 20) if (rand() > .33) ctx.fillRect(left + 7, yy, 4, 6);
-        ctx.fillStyle = theme === 'hub' ? '#474043' : '#59516d';
-      }
-    } else {
-      for (let layer = 0; layer < 3; layer++) {
-        ctx.fillStyle = tint(config.sky[1], config.leaf, .3 + layer * .14); ctx.beginPath(); ctx.moveTo(0, h);
-        for (let xx = 0; xx <= w + 20; xx += 20) ctx.lineTo(xx, h * (.70 + layer * .085) + Math.sin(xx * .016 + layer * 2) * h * .035);
-        ctx.lineTo(w, h); ctx.closePath(); ctx.fill();
-      }
-      if (theme === 'forest' || theme === 'terminal') for (let i = 0; i < 9; i++) {
-        const tx = i * 57 - 20, top = h * (.48 + rand() * .16), width = 40 + rand() * 35;
-        ctx.fillStyle = tint(config.leaf, '#203631', .52); ctx.beginPath(); ctx.moveTo(tx, top); ctx.lineTo(tx + width / 2, h * .91); ctx.lineTo(tx - width / 2, h * .91); ctx.closePath(); ctx.fill();
-      }
+    for (let layer = 0; layer < 3; layer++) {
+      ctx.fillStyle = tint(config.sky[1], config.leaf, .3 + layer * .14); ctx.beginPath(); ctx.moveTo(0, h);
+      for (let xx = 0; xx <= w + 20; xx += 20) ctx.lineTo(xx, h * (.70 + layer * .085) + Math.sin(xx * .016 + layer * 2) * h * .035);
+      ctx.lineTo(w, h); ctx.closePath(); ctx.fill();
     }
   });
 }
@@ -186,7 +167,7 @@ function addWindow(room, root, theme, config, material, layout, top) {
   const x = compact ? 0 : layout === 'single' ? .51 : -4.62;
   const y = compact ? top + .47 : config.shape === 'circle' ? 2.70 : 2.46;
   const group = new THREE.Group(); group.name = 'environment-window'; group.position.set(x, y, -.978); root.add(group);
-  const frameMaterial = material(config.trim, { roughness: .55, metalness: theme === 'hub' || theme === 'ex' || theme === 'neon' ? .32 : .02 });
+  const frameMaterial = material(config.trim, { roughness: .55, metalness: theme === 'ex' ? .32 : theme === 'dark' ? .14 : .02 });
   const pane = new THREE.Mesh(room.geometry(`environment:window:${width}:${height}:${shape}`, () => windowPaneGeometry(width, height, shape)), new THREE.MeshBasicMaterial({ map:skyTexture(room, theme, config, width / height), toneMapped:false }));
   pane.position.z = .008; group.add(pane);
   let frame;
@@ -205,7 +186,7 @@ function addWindow(room, root, theme, config, material, layout, top) {
     room.box(group, .025, height - (shape === 'arch' ? .14 : .02), .036, frameMaterial, 0, shape === 'arch' ? -.06 : 0, .052, .004);
     if (!compact) {
       room.box(group, width, .027, .036, frameMaterial, 0, -.20, .052, .004);
-      if (theme === 'glass' || theme === 'terminal') room.box(group, width, .027, .036, frameMaterial, 0, .43, .052, .004);
+      if (theme === 'glass') room.box(group, width, .027, .036, frameMaterial, 0, .43, .052, .004);
     }
   } else {
     room.box(group, width - .02, .022, .025, frameMaterial, 0, -.23, .055, .004);
@@ -429,7 +410,7 @@ export function createRoomEnvironment(room, { layout = 'double', rows = 2, floor
   };
   const tools = primitives(room, material), compact = layout === 'narrow', top = rows * 1.55 + .3975;
   const floorMap = surfaceTexture(room, theme, config, palette, true), wallMap = surfaceTexture(room, theme, config, palette, false);
-  const floorMaterial = room.material('#ffffff', { map:floorMap, roughness:theme === 'glass' ? .67 : theme === 'neon' ? .72 : .9 });
+  const floorMaterial = room.material('#ffffff', { map:floorMap, roughness:theme === 'glass' ? .67 : .9 });
   const wallMaterial = room.material('#ffffff', { map:wallMap, roughness:1 });
   for (const [mesh, next] of [[floor, floorMaterial], [wall, wallMaterial]]) if (mesh) { mesh.material.dispose(); mesh.material = next; }
   room.box(root, 24, .15, .036, material(tint(palette.wall, config.trim, .13)), 0, .078, -1.007, .004);
@@ -447,12 +428,12 @@ export function createRoomEnvironment(room, { layout = 'double', rows = 2, floor
     pencilCup(room, root, config, tools, material, left + 1.41, top, -.20);
     if (layout === 'double') {
       notebooks(room, root, config, material, 1.02, top, -.04, .93);
-      desktopObject(room, root, theme, { ...config, object:['paper', 'glass', 'acid'].includes(theme) ? 'vase' : 'lamp' }, tools, material, 2.12, top, -.04);
-      plant(room, root, config, tools, material, 3.12, top, -.09, .70, theme === 'glass' || theme === 'neon' ? 'succulent' : 'bonsai');
+      desktopObject(room, root, theme, { ...config, object:['paper', 'glass'].includes(theme) ? 'vase' : 'lamp' }, tools, material, 2.12, top, -.04);
+      plant(room, root, config, tools, material, 3.12, top, -.09, .70, theme === 'glass' ? 'succulent' : 'bonsai');
       if (config.animalKind === 'bird') animal(room, root, config, tools, material, 3.49, top, .12, .77);
     }
     const plantX = layout === 'double' ? 4.38 : 4.03;
-    plant(room, root, config, tools, material, plantX, 0, -.24, 1.85, theme === 'neon' ? 'eucalyptus' : config.plant);
+    plant(room, root, config, tools, material, plantX, 0, -.24, 1.85, config.plant);
     // Perching on the sill keeps companions above the bottom control bar at all
     // supported viewport heights. Background props also remain behind books.
     if (config.animalKind !== 'bird' || layout === 'single') animal(room, root, config, tools, material, window.x - .13, window.sillY, window.sillZ, config.animalKind === 'frog' ? 1 : .82);

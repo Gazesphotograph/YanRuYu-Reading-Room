@@ -1,0 +1,47 @@
+/* EX Private Gallery — Graphite & warm beige archive theme */
+:root[data-room-theme="ex"] {
+  --yr-bg: #34353b;
+  --yr-bg-sidebar: #292a30;
+  --yr-surface: #3d3e44;
+  --yr-surface-subtle: #313238;
+  --yr-surface-raised: #45464d;
+  --yr-surface-hover: #4a4b53;
+  --yr-overlay: rgb(0 0 0 / 0.56);
+
+  --yr-text: #eeece4;
+  --yr-text-muted: #c0bdb3;
+
+  --yr-border: #606069;
+  --yr-border-strong: #767682;
+
+  --yr-accent: #e2d1a6;
+  --yr-accent-hover: #ecdeb9;
+  --yr-accent-secondary: #e2d1a6;
+  --yr-accent-soft: #4d4b40;
+  --yr-accent-ink: #2e2d27;
+
+  --yr-danger: #f29096;
+  --yr-danger-hover: #f7a6ab;
+  --yr-danger-soft: #54393c;
+  --yr-danger-ink: #241718;
+
+  --yr-success: #99ccb0;
+  --yr-success-soft: #32453c;
+  --yr-warning: #e8c484;
+  --yr-warning-soft: #4d4332;
+
+  --yr-focus-ring: #e2d1a6;
+  --yr-shadow-rgb: 0 0 0;
+
+  --yr-radius-control: 4px;
+  --yr-radius-panel: 5px;
+  --yr-radius-dialog: 8px;
+
+  --yr-reader-bg: #24252a;
+  --yr-reader-bar: #303138;
+  --yr-reader-ink: #eeece4;
+  --yr-reader-muted: #c0bdb3;
+  --yr-reader-focus: #e2d1a6;
+
+  color-scheme: dark;
+}

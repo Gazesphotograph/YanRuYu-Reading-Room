@@ -121,7 +121,7 @@ async function main() {
     try {
       assert.equal(await hydrated.page.evaluate(() => localStorage.getItem('yanruyu-restored-backup-id')), 'fixture-restore');
       assert.equal(await hydrated.page.evaluate(() => JSON.parse(localStorage.getItem('room-sort'))), 'author');
-      assert.equal(await hydrated.page.locator('html').getAttribute('data-room-theme'), 'forest');
+      assert.equal(await hydrated.page.locator('html').getAttribute('data-room-theme'), 'dark');
       pass('Restored preferences hydrate before the initial theme and library view are rendered.');
     } finally { await hydrated.context.close(); }
 

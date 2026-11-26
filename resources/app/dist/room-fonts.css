@@ -18,6 +18,3 @@ body, button, input, select, textarea { font-family: var(--font-ui); }
 .room-card small { letter-spacing: 1.1px; }
 .book .fallback { font-weight: 450; }
 .theme-card-label small, .scene-book-label > b { font-family: var(--font-mono); }
-[data-room-theme="hub"] .brand strong { font-family: var(--font-ui); }
-[data-room-theme="terminal"] :is(.eyebrow, .nav-label, .brand small, .room-card, .pagination span, .shelf-heading, .theme-card-sub, .nav-btn .count),
-.preview-terminal .preview-heading { font-family: var(--font-mono); }

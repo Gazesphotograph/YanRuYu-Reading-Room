@@ -11,8 +11,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const out = path.join(__dirname, '.artifacts', 'manager-themes');
-const ids = ['paper', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid', 'glass'];
-const dark = new Set(['forest', 'hub', 'ex', 'terminal', 'neon']);
+const ids = ['paper', 'dark', 'glass', 'ex'];
+const dark = new Set(['dark', 'ex']);
 const report = { checks: [], screenshots: [], errors: [] };
 const pass = message => { report.checks.push(message); console.log('PASS ' + message); };
 
@@ -81,12 +81,12 @@ async function waitForManager(page) {
 
     await page.locator('[data-manager-theme-open]').click();
     await page.locator('.manager-appearance').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.manager-appearance [data-theme-choice]').count(), 8);
+    assert.equal(await page.locator('.manager-appearance [data-theme-choice]').count(), 4);
     const tabs = await page.locator('.setting-dialog [role="tab"]').allTextContents();
     assert(!tabs.some(text => /^(关于|關於|About)$/.test(text.trim())));
     const options = await page.locator('.setting-dialog').textContent();
     assert(!/Default Dark|Default Light|E-Hentai|nHentai/.test(options));
-    pass('Settings expose exactly eight theme cards; the About tab and all five old themes are absent');
+    pass('Settings expose exactly four theme cards; the About tab and all old themes are absent');
 
     const paints = new Set();
     for (const id of ids) {
@@ -105,7 +105,7 @@ async function waitForManager(page) {
       assert.equal(await page.locator('.manager-appearance [aria-pressed="true"]').count(), 1);
       assert.equal(await page.evaluate(() => document.activeElement?.dataset.themeChoice), id);
       paints.add(state.color + '|' + state.background + '|' + state.accent);
-      if (['glass', 'forest', 'acid'].includes(id)) {
+      if (['glass', 'dark', 'ex'].includes(id)) {
         const file = path.join(out, `manager-${id}.png`);
         await page.screenshot({ path: file, fullPage: true });
         report.screenshots.push(file);
@@ -118,28 +118,28 @@ async function waitForManager(page) {
       await assertSettingsShortcuts(page);
       await page.getByRole('tab', { name: '主题', exact: true }).click();
     }
-    assert.equal(paints.size, 8);
+    assert.equal(paints.size, 4);
     await page.waitForTimeout(650);
-    assert.equal(model.setting.theme, 'glass');
+    assert.equal(model.setting.theme, 'ex');
     assert.equal(model.setting.library, '仅供自动检查的模拟书库');
     assert.equal(model.setting.imageExplorer, '');
-    pass('All eight themes repaint controls and persist without changing library or reader settings');
-    pass('All eight themes keep field actions connected and shortcut names and combinations readable');
+    pass('All four themes repaint controls and persist without changing library or reader settings');
+    pass('All four themes keep field actions connected and shortcut names and combinations readable');
 
     await page.keyboard.press('Escape');
     await page.locator('.setting-dialog').waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: '返回 3D 阅览室', exact: true }).click();
     await page.waitForSelector('.shell');
-    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'glass');
+    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'ex');
     await page.locator('[data-action="theme"]').first().click();
-    await page.locator('#modal-root [data-theme-choice="forest"]').click();
+    await page.locator('#modal-root [data-theme-choice="dark"]').click();
     await page.keyboard.press('Escape');
     await page.locator('[data-action="classic"]').first().click();
     await waitForManager(page);
-    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'forest');
+    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'dark');
     await page.reload();
     await waitForManager(page);
-    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'forest');
+    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'dark');
     pass('Theme selection survives both interface directions and an application-page reload');
 
     const search = page.locator('.app-toolbar .search-input input');
@@ -161,10 +161,22 @@ async function waitForManager(page) {
     pass('Window controls remain clickable and obsolete About shortcuts open no orphaned panel');
     await context.close();
 
-    for (const [legacy, expected] of [['light', 'paper'], ['dark', 'forest'], ['light e-hentai', 'paper'], ['dark exhentai', 'ex'], ['dark nhentai', 'neon']]) {
+    const migrations = [
+      ['light', 'paper', { appTheme: 'light' }],
+      ['light e-hentai', 'paper', { appTheme: 'light e-hentai' }],
+      ['acid', 'paper', { 'room-theme': JSON.stringify('acid') }],
+      ['forest', 'dark', { 'room-theme': JSON.stringify('forest') }],
+      ['hub', 'dark', { 'room-theme': JSON.stringify('hub') }],
+      ['terminal', 'dark', { 'room-theme': JSON.stringify('terminal') }],
+      ['neon', 'dark', { 'room-theme': JSON.stringify('neon') }],
+      ['dark nhentai', 'dark', { appTheme: 'dark nhentai' }],
+      ['dark exhentai', 'ex', { appTheme: 'dark exhentai' }],
+      ['gallery', 'ex', { appTheme: 'gallery' }],
+    ];
+    for (const [legacy, expected, seed] of migrations) {
       const migrationModel = makeModel(fixtures);
       migrationModel.setting.theme = legacy;
-      const migrationContext = await contextFor(browser, migrationModel, { appTheme: legacy });
+      const migrationContext = await contextFor(browser, migrationModel, seed);
       const migrationPage = await migrationContext.newPage();
       migrationPage.on('pageerror', error => report.errors.push(error.message));
       await migrationPage.goto(appURL);

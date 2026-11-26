@@ -13,8 +13,11 @@ const { migrateLegacyProgress, migrateLegacyVisits, normalizeProgress, normalize
 
 const base = path.resolve(__dirname, '..');
 const appURL = pathToFileURL(path.join(base, 'resources', 'app', 'dist', 'index.html')).href;
+if (!fs.existsSync(path.join(base, 'resources', 'app', 'dist', 'app', 'main.js'))) {
+  throw new Error('UI bundle missing: run `npm run build:ui` before running suites directly.');
+}
 const outDir = path.resolve(process.env.GALLERY_TEST_OUTPUT || path.join(__dirname, '.artifacts', 'gallery'));
-const themeIds = ['paper', 'glass', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid'];
+const themeIds = ['paper', 'dark', 'glass', 'ex'];
 const bookSelector = '#room [data-book]';
 const selectedCases = new Set((process.argv.find(value => value.startsWith('--case=')) || '').slice(7).split(',').filter(Boolean));
 const saveScreenshots = process.argv.includes('--screenshots');
@@ -389,7 +392,7 @@ async function testThemes(browser, fixtures) {
     await page.evaluate(() => { localStorage.removeItem('room-theme'); localStorage.setItem('room-night', 'true'); });
     await page.reload();
     await waitForCount(page, 2);
-    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'forest');
+    assert.equal(await page.locator('html').getAttribute('data-room-theme'), 'dark');
     await page.evaluate(() => { localStorage.setItem('room-theme', '"unknown-theme"'); localStorage.setItem('room-night', 'false'); });
     await page.reload();
     await waitForCount(page, 2);
@@ -744,7 +747,7 @@ async function testLayouts(browser, fixtures) {
       await screenshot(page, `${width}-grid`);
       await setView(page, 'shelf');
       await page.locator('[data-action="theme"]').first().click();
-      await page.locator('[data-theme-choice="acid"]').scrollIntoViewIfNeeded();
+      await page.locator('[data-theme-choice="ex"]').scrollIntoViewIfNeeded();
       const modalBounds = await page.locator('.theme-modal').evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }));
       assert(modalBounds.scroll <= modalBounds.client + 1, `Theme picker overflows at ${width}px`);
       await noOverflow(page);

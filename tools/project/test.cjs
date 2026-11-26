@@ -2,9 +2,12 @@
 
 const { fs, path, root, runNode } = require('./common.cjs');
 const { build } = require('./build.cjs');
+const { buildUi } = require('./build-ui.cjs');
 
 function test() {
   if (!process.argv.includes('--all')) {
+    // The suites open resources/app/dist/index.html directly; it needs the bundle.
+    buildUi();
     runNode(path.join(root, 'tools', 'test-workspace-smoke.cjs'));
     return;
   }

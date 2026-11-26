@@ -72,7 +72,7 @@ const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'yanruyu-personal-app-'));
     assert.equal(await page.locator('.scene-viewport').getAttribute('data-camera-target-yaw'),'0.13');
     assert.equal(await page.evaluate(()=>!!window.__personalAudio),false,'Reloaded root shell must not autoplay saved ambience');
     assert.equal(await page.locator('[data-action="featured"]').getAttribute('aria-pressed'),'true');
-    for(const expected of [{theme:'forest',layout:'balanced',brightness:'100',yaw:'0'},{theme:'paper',layout:'airy',brightness:'113',yaw:'0.13'}]){
+    for(const expected of [{theme:'dark',layout:'balanced',brightness:'100',yaw:'0'},{theme:'paper',layout:'airy',brightness:'113',yaw:'0.13'}]){
       await page.locator('[data-action="theme"]').first().click();await page.locator(`[data-theme-choice="${expected.theme}"]`).click();
       await page.locator('[data-action="dismiss"]').first().click();
       await page.waitForFunction(expected=>{const node=document.querySelector('.scene-viewport');return node?.dataset.sceneTheme===expected.theme&&node.dataset.cameraYaw===expected.yaw;},expected);

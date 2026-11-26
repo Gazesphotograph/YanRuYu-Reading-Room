@@ -89,7 +89,7 @@ function validateLibraryState(value, queryOnly = false) {
 function validatePersonalization(value) {
   const object = item => !!item && typeof item === 'object' && !Array.isArray(item)
   const number = (item, min, max) => typeof item === 'number' && Number.isFinite(item) && item >= min && item <= max
-  const themes = new Set(['paper', 'glass', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid'])
+  const themes = new Set(['paper', 'dark', 'glass', 'ex', 'forest', 'hub', 'terminal', 'neon', 'acid'])
   if (!object(value) || value.schemaVersion !== 1 || !object(value.themes) || Object.keys(value.themes).some(key => !themes.has(key)) ||
       !Array.isArray(value.featuredIds) || value.featuredIds.length > 60 || new Set(value.featuredIds).size !== value.featuredIds.length ||
       value.featuredIds.some(id => typeof id !== 'string' || !id || id.length > 256 || ['__proto__', 'constructor', 'prototype'].includes(id)) ||

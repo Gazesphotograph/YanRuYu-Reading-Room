@@ -85,7 +85,7 @@ return {occlusions,hits,aspects:room.items.map(item=>({actual:item.width/item.he
     assert.deepEqual(await page.locator('.personal-stats strong').allTextContents(),['2 本','1 本','1 本','2 本']);
     assert.equal(await page.locator('[data-personal-book="hidden"]').count(),0);
     await page.locator('[data-personal-book="neutral-0"]').click();assert.equal(await page.evaluate(()=>openedBook),'neutral-0');
-    await page.evaluate(()=>{personal.dispose();personal=createPersonal();state.theme='forest';room.setTheme('forest');personal.applyScene();});
+    await page.evaluate(()=>{personal.dispose();personal=createPersonal();state.theme='dark';room.setTheme('dark');personal.applyScene();});
     assert.equal(await page.evaluate(()=>personal.sceneOptions().brightness),100,'Other themes retain their own defaults');
     await page.evaluate(()=>{state.theme='paper';room.setTheme('paper');personal.applyScene();});
     assert.equal(await page.evaluate(()=>personal.sceneOptions().brightness),118,'Saved preferences survive controller reinitialization');

@@ -12,6 +12,9 @@
 !/docs/
 !/tools/
 !/source/
+!/src/
+!/tsconfig.json
+!/vite.config.mts
 !/resources/
 !/项目评估与迭代计划.md
 !/第一阶段实施记录.md
@@ -32,6 +35,8 @@
 !/resources/app/fileLoader/
 !/resources/app/dist/
 !/resources/app/public/
+# Vite output of src/renderer; rebuilt by npm run build:ui, build, dev and test.
+/resources/app/dist/app/
 /resources/extraResources/*
 !/resources/extraResources/7z.exe
 !/resources/extraResources/7z.dll

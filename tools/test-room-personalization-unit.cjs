@@ -13,7 +13,12 @@ const importSource=name=>import('data:text/javascript;base64,'+fs.readFileSync(p
   assert.doesNotThrow(()=>validateClientState({schemaVersion:1,values:{'room-personalization':JSON.stringify(normalized)}}),'Renderer normalization must match the portable backup validator');
   assert.doesNotThrow(()=>validateClientState({schemaVersion:1,values:{'room-personalization':JSON.stringify(normalizeRoomPersonalization())}}));
   assert.deepEqual(normalized.featuredIds,['book-2','book-1']);
-  assert.equal(Object.keys(normalized.themes).length,8);
+  assert.equal(Object.keys(normalized.themes).length,4);
+  assert.deepEqual(Object.keys(normalized.themes),['paper','dark','glass','ex']);
+  const migrated=normalizeRoomPersonalization({themes:{forest:{current:{layout:'airy',brightness:112}}}});
+  assert.equal(migrated.themes.dark.current.layout,'airy');
+  assert.equal(migrated.themes.dark.current.brightness,112);
+  assert.doesNotThrow(()=>validateClientState({schemaVersion:1,values:{'room-personalization':JSON.stringify({schemaVersion:1,themes:{forest:{current:normalizeRoomOptions(),saved:normalizeRoomOptions(),savedAt:0}},featuredIds:[],sound:{kind:'off',volume:20,duringReading:false}})}}),'Legacy backup personalization keys remain valid');
   assert.equal(normalized.themes.paper.current.layout,'balanced');
   assert.equal(normalized.themes.paper.current.brightness,125);
   assert.equal(normalized.themes.paper.current.warmth,-30);

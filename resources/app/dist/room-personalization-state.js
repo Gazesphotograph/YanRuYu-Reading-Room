@@ -1,5 +1,5 @@
 // Bounded, serializable room preferences. No scene, storage or DOM dependency.
-export const PERSONAL_ROOM_THEMES = ['paper', 'glass', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid'];
+export const PERSONAL_ROOM_THEMES = ['paper', 'dark', 'glass', 'ex'];
 export const ROOM_LAYOUTS = [
   { id:'balanced', name:'经典布置', description:'保留熟悉的书架与阅读角' },
   { id:'airy', name:'舒展陈列', description:'书架间留出更多空隙，阅读角向外舒展' },
@@ -35,10 +35,20 @@ export function normalizeRoomOptions(value) {
 export function normalizeRoomPersonalization(value) {
   value=plain(value);
   const themes=plain(value.themes), sound=plain(value.sound);
+  const legacyEntry = theme => {
+    if (Object.hasOwn(themes, theme)) return plain(themes[theme]);
+    if (theme === 'dark') {
+      for (const legacy of ['forest', 'hub', 'terminal', 'neon']) {
+        if (Object.hasOwn(themes, legacy)) return plain(themes[legacy]);
+      }
+    }
+    if (theme === 'paper' && Object.hasOwn(themes, 'acid')) return plain(themes.acid);
+    return {};
+  };
   return {
     schemaVersion:1,
     themes:Object.fromEntries(PERSONAL_ROOM_THEMES.map(theme=>{
-      const entry=plain(themes[theme]);
+      const entry=legacyEntry(theme);
       return [theme,{current:normalizeRoomOptions(entry.current),saved:normalizeRoomOptions(entry.saved),savedAt:finite(entry.savedAt,0,0,Number.MAX_SAFE_INTEGER)}];
     })),
     featuredIds:[...new Set(Array.isArray(value.featuredIds)?value.featuredIds.filter(validFeaturedId):[])].slice(0,60),

@@ -196,8 +196,9 @@ test('backups cannot silently overwrite another backup and client-state accepts 
   assert.throws(() => writeClientState(source.storePath, { schemaVersion: 1, values: { arbitrarySecret: 'never copy' } }), /不支持/);
   assert.throws(() => writeClientState(source.storePath, { schemaVersion: 1, values: { recentRead: '{}' } }), /最近阅读/);
   assert.throws(() => writeClientState(source.storePath, { schemaVersion: 1, values: { expandNodes: 'not-json' } }), /JSON/);
-  writeClientState(source.storePath, { schemaVersion: 1, values: { 'room-night': 'true', appTheme: 'forest' } });
+  writeClientState(source.storePath, { schemaVersion: 1, values: { 'room-night': 'true', appTheme: 'forest', 'room-theme': '"dark"' } });
   assert.equal(readClientState(source.storePath).values['room-night'], 'true');
+  assert.equal(readClientState(source.storePath).values['room-theme'], '"dark"');
   checks.push('Existing backup files are never overwritten; arbitrary origin storage is excluded.');
 });
 

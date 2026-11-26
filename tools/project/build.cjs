@@ -2,8 +2,10 @@
 
 const { fs, path, root, appSource, appPackage, extras, sha256, listSourceFiles, npm, runNode, uniqueDirectory, writePointer, copyFile } = require('./common.cjs');
 const { pruneBuildDependencies } = require('./lean-runtime.cjs');
+const { buildUi } = require('./build-ui.cjs');
 
 function build() {
+  buildUi();
   runNode(path.join(__dirname, 'check.cjs'));
   const files = listSourceFiles();
   const packageInfo = appPackage();

@@ -15,7 +15,7 @@ const { openManager, settleVisuals } = require('./test-manager-glass.cjs');
 const output = path.resolve(process.env.UI_THEME_TEST_OUTPUT || path.join(__dirname, '.artifacts', 'ui-theme-consistency'));
 const selected = new Set((process.argv.find(arg => arg.startsWith('--case=')) || '').slice(7).split(',').filter(Boolean));
 const saveScreenshots = process.argv.includes('--screenshots');
-const themes = ['paper', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid', 'glass'];
+const themes = ['paper', 'dark', 'glass', 'ex'];
 const report = { date: new Date().toISOString(), source: 'isolated neutral library; memory IPC only', checks: [], failures: [], screenshots: [], errors: [] };
 let activeCase = '';
 const pass = (name, details) => { report.checks.push({ case: activeCase, name, details }); console.log('PASS ' + name); };
@@ -143,7 +143,7 @@ async function themesCheck(browser, fixtures) {
           assert(state.areaFraction > .1, `${descriptor.name}: glass only covers a small control, not the main panel`);
           await screenshot(page, `glass-${descriptor.name}-desktop`);
         }
-        if (id === 'forest' && ['tasks', 'organizer', 'personalization'].includes(descriptor.name)) await screenshot(page, `${id}-${descriptor.name}-desktop`);
+        if (id === 'dark' && ['tasks', 'organizer', 'personalization'].includes(descriptor.name)) await screenshot(page, `${id}-${descriptor.name}-desktop`);
         surfaces.push({ name: descriptor.name, ...state });
         await panel.locator(descriptor.close).first().click();
         await panel.waitFor({ state: 'detached' });
@@ -245,7 +245,7 @@ async function checkIcons(page, selector, label) {
 
 async function roomLayoutCheck(browser, fixtures) {
   await withRoom(browser, fixtures, async page => {
-    for (const id of ['glass', 'paper', 'forest']) {
+    for (const id of ['glass', 'paper', 'dark']) {
       await theme(page, id);
       for (const viewport of [{ width: 1560, height: 760 }, { width: 1280, height: 560 }, { width: 950, height: 520 }, { width: 720, height: 480 }, { width: 420, height: 640 }]) {
         await page.setViewportSize(viewport); await settleVisuals(page);
@@ -333,7 +333,7 @@ async function managerLayoutCheck(browser, fixtures) {
   uiModel(model);
   page.on('pageerror', error => report.errors.push({ case: activeCase, error: error.message }));
   try {
-    for (const id of ['glass', 'paper', 'forest']) {
+    for (const id of ['glass', 'paper', 'dark']) {
       await theme(page, id, true);
       for (const viewport of [{ width: 1560, height: 760 }, { width: 1280, height: 560 }, { width: 950, height: 520 }, { width: 720, height: 480 }]) {
         await page.setViewportSize(viewport); await settleVisuals(page);

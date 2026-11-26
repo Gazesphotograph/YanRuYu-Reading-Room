@@ -12,13 +12,9 @@ import { normalizeRoomOptions, normalizeRoomCamera, roomLayoutOffsets } from './
 // projections so keyboard navigation and the existing reader remain native DOM.
 const PALETTES = {
   paper: { wall:'#e8e5dc', floor:'#d7d2c4', wood:'#59483b', edge:'#342c24', fabric:'#566850', rug:'#c4bcaa', metal:'#49453c', accent:'#b19469', print:'#f0ebdf', light:'#fff6e8', exposure:1.05 },
+  dark: { wall:'#232328', floor:'#1c1c20', wood:'#38363b', edge:'#18181c', fabric:'#4b505c', rug:'#2d2e34', metal:'#8d93a0', accent:'#93b4d8', print:'#cfd3dc', light:'#b8c7d9', exposure:0.95 },
   glass: { wall:'#f6f6f5', floor:'#eef0ef', wood:'#ffffff', edge:'#c5cbcd', fabric:'#fbfbfa', rug:'#e7eae8', metal:'#bec4c6', accent:'#aebbbd', print:'#fdfdfc', light:'#ffffff', exposure:1.03 },
-  forest: { wall:'#333d35', floor:'#394137', wood:'#554b3a', edge:'#292d25', fabric:'#74816a', rug:'#535b4b', metal:'#aaa48b', accent:'#bbc49e', print:'#c9cbb6', light:'#f3ebd1', exposure:0.94 },
-  hub: { wall:'#252525', floor:'#30302e', wood:'#383531', edge:'#171716', fabric:'#8f6137', rug:'#49433b', metal:'#9d7e51', accent:'#ff9900', print:'#d9c9b2', light:'#ffce89', exposure:0.94 },
   ex: { wall:'#45464b', floor:'#424247', wood:'#625d54', edge:'#303136', fabric:'#82817a', rug:'#64625d', metal:'#b1a78e', accent:'#d9caa3', print:'#d7d0bf', light:'#fff1d7', exposure:0.93 },
-  terminal: { wall:'#192720', floor:'#203026', wood:'#344b39', edge:'#16241b', fabric:'#536e4c', rug:'#394b37', metal:'#71977a', accent:'#9cdb9f', print:'#bdc9af', light:'#e1f1cb', exposure:0.90 },
-  neon: { wall:'#2b253c', floor:'#312c43', wood:'#4f415e', edge:'#211c2d', fabric:'#756888', rug:'#484254', metal:'#ada2bc', accent:'#87c6cd', print:'#d4c9df', light:'#e4dbff', exposure:0.93 },
-  acid: { wall:'#e0e2cf', floor:'#cbd0b9', wood:'#555b36', edge:'#252b20', fabric:'#b6648f', rug:'#b8be9b', metal:'#32392a', accent:'#b1cb50', print:'#e5edb8', light:'#fff7e3', exposure:1.03 },
 };
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
@@ -337,15 +333,15 @@ export class RoomScene {
     this.cameraDirty=true;this.targetsDirty=true;this.pageMaterial=null;this.boardMaterials=[];this.bookRows=[];
     const p=PALETTES[this.theme];this.palette=p;this.scene.background=new THREE.Color(p.wall);this.renderer.toneMappingExposure=p.exposure;
     this.element.dataset.sceneState='loading';this.element.dataset.sceneTheme=this.theme;
-    const materials={paper:'胡桃木 · 日光',glass:'纯白玻璃 · 柔光',forest:'深木 · 夜读',hub:'炭黑 · 琥珀',ex:'石墨 · 米金',terminal:'墨绿 · 档案',neon:'紫灰 · 冷光',acid:'橄榄 · 玫粉'};
-    this.element.querySelector('.scene-material').textContent=materials[this.theme];
-    const natural=this.theme==='paper'||this.theme==='forest';
-    const coated=this.theme==='acid',glass=this.theme==='glass';
+    const materials={paper:'胡桃木 · 日光',dark:'中性深灰 · 静夜柔光',glass:'纯白玻璃 · 柔光',ex:'石墨 · 米金'};
+    this.element.querySelector('.scene-material').textContent=materials[this.theme]||materials.paper;
+    const natural=this.theme==='paper'||this.theme==='dark';
+    const glass=this.theme==='glass';
     const grain=natural?this.staticTexture('grain',grainTexture):null;if(grain)grain.wrapS=grain.wrapT=THREE.RepeatWrapping;
     const weave=!this.narrow&&this.capacity<=6?this.staticTexture('fabric',fabricTexture):null;if(weave){weave.wrapS=weave.wrapT=THREE.RepeatWrapping;weave.repeat.set(9,9);}
     this.shadow=this.staticTexture(glass?'shadow-glass':'shadow',()=>shadowTexture(glass));
     const reflection=glass?this.staticTexture('glass-reflection',glassReflectionTexture):null;
-    this.wood=glass?new THREE.MeshPhysicalMaterial({color:p.wood,roughness:.18,metalness:.02,transparent:true,opacity:.58,ior:1.46,envMap:reflection,envMapIntensity:.5,depthWrite:false}):this.material(p.wood,{map:natural?grain:null,bumpMap:natural?grain:null,bumpScale:.007,roughness:natural?.66:coated?.82:.48,metalness:natural||coated?0:.24});
+    this.wood=glass?new THREE.MeshPhysicalMaterial({color:p.wood,roughness:.18,metalness:.02,transparent:true,opacity:.58,ior:1.46,envMap:reflection,envMapIntensity:.5,depthWrite:false}):this.material(p.wood,{map:natural?grain:null,bumpMap:natural?grain:null,bumpScale:.007,roughness:natural?.66:.48,metalness:natural?0:.24});
     this.endgrain=glass?new THREE.MeshBasicMaterial({color:'#8f9b9e',transparent:true,opacity:.2,depthWrite:false,toneMapped:false}):this.wood.clone();
     if(!glass)this.endgrain.roughness=.78;
     this.fabric=this.material(p.fabric,{bumpMap:weave,bumpScale:glass?.003:.019,roughness:.94});

@@ -11,7 +11,7 @@ const { chromium } = require('./playwright-runtime.cjs');
 const { launchOptions } = require('./test-gallery.cjs');
 const output = fs.mkdtempSync(path.join(os.tmpdir(), 'yanruyu-environment-'));
 const dist = path.resolve(__dirname, '../resources/app/dist');
-const themes = ['paper', 'glass', 'forest', 'hub', 'ex', 'terminal', 'neon', 'acid'];
+const themes = ['paper', 'dark', 'glass', 'ex'];
 const source = value => pathToFileURL(path.join(dist, value)).href;
 const errors = [], checks = [];
 const harness = path.join(output, 'scene.html');
@@ -28,7 +28,7 @@ window.fixtureBooks=Array.from({length:12},(_,i)=>{
  return {id:'neutral-'+i,title:'静物档案 '+String(i+1).padStart(2,'0'),cover:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg),pages:80,progress:i===0?22:0};
 });
 window.room=new RoomScene(document.querySelector('#scene'));window.room.setBooks(window.fixtureBooks,'paper');
-window.setScene=(theme,count=12)=>{document.body.classList.toggle('dark',['forest','hub','ex','terminal','neon'].includes(theme));window.room.setBooks(window.fixtureBooks.slice(0,count),theme)};
+window.setScene=(theme,count=12)=>{document.body.classList.toggle('dark',['dark','ex'].includes(theme));window.room.setBooks(window.fixtureBooks.slice(0,count),theme)};
 window.inspectCovers=()=>{
  const {room,THREE}=window,ray=new THREE.Raycaster(),occlusions=[],environment=[];
  room.world.updateMatrixWorld(true);
@@ -69,7 +69,7 @@ window.inspectCovers=()=>{
     const before = await page.evaluate(() => window.room.frameCount);
     await page.waitForTimeout(650);
     assert.equal(await page.evaluate(() => window.room.frameCount), before, 'Environment must not start an idle render loop');
-    for (const theme of ['glass', 'forest', 'neon']) {
+    for (const theme of ['glass', 'dark', 'ex']) {
       await page.evaluate(theme => window.setScene(theme, 6), theme);
       await page.waitForFunction(() => window.room.items.length === 6 && window.room.frame === 0);
       assert.deepEqual(await page.evaluate(() => window.inspectCovers()), [], theme + ': single cabinet');
@@ -86,7 +86,7 @@ window.inspectCovers=()=>{
       let released=0;for(const map of textures)map.addEventListener('dispose',()=>released++);
       room.dispose();return {expected:textures.length,released};
     });
-    assert(disposed.expected > 30, 'All eight environment themes should have been exercised');
+    assert(disposed.expected >= 16, 'All four environment themes should have been exercised');
     assert.equal(disposed.released, disposed.expected, 'Disposing the room releases every environment texture');
     console.log('PASS single and narrow layouts, static rendering, disposal and browser errors');
   } finally {
