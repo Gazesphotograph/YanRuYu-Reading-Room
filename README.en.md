@@ -2,33 +2,93 @@
 
 [中文](README.md) · **English**
 
-A Windows desktop manga management and reading application customized from exhentai-manga-manager 1.6.15. The current stable release is **2.0.0**.
+Yanruyu is a local manga library manager and reader for **Windows x64**. Choose a folder of image directories and comic archives to build a searchable library. Resume from the desk, organize books in a table, or browse by cover in a 3D reading room. All three views share the same library and reading history.
+
+**Stable release 2.0.0** · [Download Windows x64 ZIP][download] · [Release notes and checksums][releases]
+
+[Quick start](#quick-start) · [Workspace](#workspace) · [Organize and search](#organize-and-search) · [Data and upgrades](#data-and-upgrades) · [Development](#development)
 
 ## Screenshots
 
-Tested in full-screen mode at 2560 × 1080 using a separate sample library.
+These screenshots were captured from the 2.0.0 desktop package at 2560 × 1080 with a separate sample library.
 
-![3D Bookshelf and Reading Room (21:9)](docs/images/reading-room-21x9.png)
+**3D reading room.** Browse the current selection or display books you have picked for your shelves.
 
-![Library Grid (21:9)](docs/images/library-grid-21x9.png)
+![3D bookshelf and reading room (21:9)](docs/images/reading-room-21x9.png)
 
-## Features
+**Library grid.** Browse covers or use the controls in the top right to switch to the table for sorting, selection, and batch edits.
 
-- **3D Bookshelf and Reading Room**: four themes, liquid glass interface, room layout, curated displays, ambient sounds, and reading statistics.
-- **Library Management**: Library table, smart bookshelf, batch organization, merging of duplicate titles, missing file checks, and undo functionality.
-- **Local Reading**: Built-in reader, saved reading progress and preferences, book relocation, and decompression cache subject to storage capacity limits.
-- **Local Search**: Aliases, text search, and recommendations for similar books; Windows OCR requires the corresponding language recognition components to be installed on the system.
-- **Data Protection**: Backup and restore, corrupted data recovery portal, isolated data directory, and separation of development and testing environments.
+![Library grid (21:9)](docs/images/library-grid-21x9.png)
 
-## Download and Usage
+## Quick start
 
-Version 2.0 opens directly into the unified workspace. Use the desk to import a library or resume reading, the library to browse covers or a table and manage collections in bulk, and the reading room to browse the 3D bookshelf. Book details let you preview online metadata and choose which fields to apply. See the [2.0 verification matrix](docs/颜如玉2.0功能验收矩阵.md) for migration and validation details.
+1. Download `yanruyu-2.0.0-windows-x64.zip`, extract it to its own folder, and run `exhentai-manga-manager.exe`. Node.js is only needed for development. [Release downloads][releases]
+2. On the desk, choose the parent folder where you keep your manga. The scanner reads image folders and ZIP, CBZ, 7z, CB7, RAR, and CBR archives. It builds a catalog and creates covers. Your original files stay in place. Scan status is available in the task center.
+3. Open a book from the desk or select a cover in the library to open its details, then start reading. The desk and the reading history make it easy to return to an open book.
+4. Switch between cover and table views in the library. Open the selected book in the reading room from its details and return to the same library results when you finish browsing.
 
-Download `yanruyu-2.0.0-windows-x64.zip` from the [2.0.0 release][releases], extract it to a new folder, and double-click `exhentai-manga-manager.exe`. Node.js is not required for normal use. The release includes a `SHA256SUMS.txt` file for verifying the download.
+To verify your download, run the following command in the folder containing the ZIP and compare the result with `SHA256SUMS.txt`. [Release assets][releases]
 
-Upon first run, the program defaults to using the system user’s app data directory. Create a `data` folder next to the program to enable portable mode; you can also specify the absolute path to a separate data directory via the environment variable `YANRUYU_DATA_DIR`.
+```powershell
+Get-FileHash -Algorithm SHA256 .\yanruyu-2.0.0-windows-x64.zip
+```
 
-Before upgrading, create and verify a backup within the application, exit the old version, and then extract the new version to a new directory. To continue using your old library, follow [Usage and Upgrades][upgrade] to set the original data directory, verify your book list, favorites, and reading progress, and then update the shortcut.
+## Workspace
+
+| View | What you can do |
+| --- | --- |
+| **Desk** | Import a library, discover recent additions, resume the last book, and open reading history or featured books |
+| **Library** | Browse covers, sort and select rows in the table, or combine folders, tags, favorites, reading status, and collections |
+| **Reading room** | Explore the current selection on 3D shelves, adjust the viewpoint, decorate the room, and display featured books |
+| **Book details** | Check page count, file path, ratings, tags, and progress. Edit the book, fetch metadata, or reconnect a moved file |
+
+Switching between the library and reading room preserves the query, sort order, page, and selected book. You can choose your startup view in Reading Room Settings.
+
+### Reader
+
+- **Single-page** mode supports fit-to-page and fit-to-width viewing. **Double-page** mode offers a separate cover and shows wide spreads on their own. **Continuous** mode supports scrolling and remembers your position within a page.
+- Progress, mode, reading direction, zoom, and display preferences are stored per book. Jump by page number, slider, or thumbnail. Use `G` to enter a page number, `T` for thumbnails, `M` to change mode, and `R` to switch direction.
+- Page tools let you copy the current page, use it as the cover, confirm page removal, or switch to another book in the current results. System and Reading Settings lets you choose an external reader, which manages its own page position.
+- Archives are extracted on demand. The default cache budget is **2 GB**. Change the limit or clear inactive entries in Settings. [Reader and keyboard reference in Chinese][manual]
+
+### 3D reading room and themes
+
+Drag to look around, scroll to zoom, or use the room controls to reset the view. Configure featured books, room details, ambient audio, and rendering quality. Four themes, **Warm White, Quiet Night, White Liquid Glass, and EX**, apply across the library, reading room, and reader controls. Choose from three rendering quality levels. When WebGL is unavailable, you can continue browsing covers and opening books. [Reading room controls in Chinese][manual]
+
+## Organize and search
+
+- **Filters, collections, and smart shelves.** Add books to a collection by hand. Smart shelves save queries and criteria such as tags, favorites, and reading status, then include new matching books automatically. Folder filters can include subfolders.
+- **Individual and batch edits.** Edit the title, author, or cover from book details. Select multiple rows to preview changes to fields such as tags, category, rating, and favorites. Supported operations can be undone in organization history.
+- **Missing and duplicate books.** Reconnect a book from its details after changing paths or drives. When the contents match, the app retains its catalog ID, favorites, and reading history. Compare suspected duplicates by path, content fingerprint, and progress before choosing a record to keep.
+- **Page text and OCR.** Search book information, book information and text, or page text. Open a text hit at the corresponding page. Windows OCR requires the relevant recognition languages to be installed. Local search also supports aliases and similar-book suggestions.
+- **Metadata and tasks.** Look up E-Hentai, ExHentai, or Hentag from book details, or load a local `.ehviewer` file. Preview and apply individual fields. The task center shows scan, extraction, and metadata progress, with cancellation and retries for supported tasks. [Feature and verification matrix in Chinese][matrix]
+
+## Data and upgrades
+
+### Application data and manga files
+
+| Mode | Data location |
+| --- | --- |
+| Standard | The current Windows user's application data directory |
+| Portable | Create `data/` beside the executable or retain the existing legacy `portable` marker |
+| Explicit | Set `YANRUYU_DATA_DIR` to an absolute directory path. This setting takes precedence |
+
+The data directory stores the catalog, metadata, favorites, collections, reading history, and settings. Original manga files stay in the library folder you scanned. Use Backup and Restore in Reading Room Settings to export a `.yru-backup` file. Covers are optional, and manga files need a separate backup. The restore flow previews and verifies the backup and creates a recovery point for current data. [Data paths and isolation in Chinese][isolation]
+
+### Upgrade from 1.6.16 or a 2.0 preview
+
+1. Create and verify a backup in the old version, note its data directory, and close the app.
+2. Extract 2.0.0 to a new folder. With the standard data directory, launch it under the same Windows account. For portable or custom paths, point the new app at the existing data directory.
+3. Check your catalog, favorites, collections, and the page where a book resumes. Update your shortcut after those checks. Classic profiles open in the 2.0 workspace, which can import compatible reading history. [Full upgrade and rollback guide in Chinese][upgrade]
+
+### Common questions
+
+| Situation | What to check |
+| --- | --- |
+| My library looks empty after upgrading | Check the active data path, especially if the old app used a `portable` marker or a separate `data/` folder |
+| A book is still listed after moving it, but it will not open | Check that the new location is accessible, then reconnect the file from book details |
+| A large archive fails to open | Check the error in the task center, free disk space, and the extraction cache budget |
+| I want to read on a new PC | Transfer both application data and the original manga files, then check library paths and resume positions |
 
 ## Development
 
@@ -64,7 +124,7 @@ The test entry point installs runtime dependencies in a new staging directory. T
 
 | Path | Content |
 | --- | --- |
-| `resources/app/index.js`, `modules/`, `fileLoader/` | Electron main process, database, and file handling |
+| `resources/app/index.js`, `resources/app/modules/`, `resources/app/fileLoader/` | Electron main process, database, and file handling |
 | `resources/app/preload.js` | Restricted desktop interface bridge |
 | `src/renderer/` | Vue, Pinia, and TypeScript renderer source |
 | `resources/app/dist/app/` | Generated Vue renderer output |
@@ -74,7 +134,7 @@ The test entry point installs runtime dependencies in a new staging directory. T
 | `tools/project/`, `tools/tests/` | Development, build, packaging, auditing, and engineering tests |
 | `docs/` | Usage, data isolation, source code origins, and engineering documentation |
 
-The Vue shell loads the reading room directly. Existing classic profiles open the workspace and retain their reading history. See the [acceptance matrix](docs/颜如玉2.0功能验收矩阵.md).
+The Vue entry point launches the desktop workspace. The release bundles Vite output alongside the JavaScript and CSS that implement the room and existing views.
 
 ## Data and Release Boundaries
 
@@ -107,3 +167,6 @@ Electron, Three.js, 7-Zip, and other dependencies are subject to their respectiv
 [footprint]: docs/程序体积与清理.md
 [docs]: docs/README.md
 [acceptance]: docs/工程与发布验收.md
+[download]: https://github.com/Gazesphotograph/YanRuYu-Reading-Room/releases/download/v2.0.0/yanruyu-2.0.0-windows-x64.zip
+[matrix]: docs/颜如玉2.0功能验收矩阵.md
+[manual]: 颜如玉阅览室说明.md
